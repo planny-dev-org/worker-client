@@ -1,4 +1,6 @@
-Helps planny_model workers to dialog with redis streams in order to:
+
+**Helps planny_model workers to dialog with redis streams in order to:**
+
 - get a job payload
 - send logs
 - send ongoing results
@@ -36,5 +38,6 @@ This stream is created by worker if not exists.
 Since different versions of workers may exist with different expected payloads. A convention is to:
 - name the stream using convention "<major>_<minor>", all workers version thats fit this are expected to be able to consume messages from this stream.
 - consumer names use convention "<major>_<minor>_<patch>", so that we can identify which worker version has processed messages.
+
 
 
