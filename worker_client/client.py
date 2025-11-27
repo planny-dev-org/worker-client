@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Optional, List, Tuple, Literal
 import datetime
 import logging
@@ -83,28 +84,28 @@ class ConsumerJob:
 
     message_id: str
     reply_log_stream_key: str
-    remote_resource_id: Optional[str]
     reply_output_stream_key: Optional[str]
+    remote_resource_id: Optional[str]
     payload: Optional[dict]
 
     def __init__(
         self,
         message_id: str,
-        log_stream_key: str,
-        output_stream_key: str = None,
-        payload: dict = None,
+        reply_log_stream_key: str,
+        reply_output_stream_key: Optional[str] = None,
+        remote_resource_id: Optional[str] = None,
+        payload: Optional[dict] = None,
     ) -> None:
-        self._message_id = message_id
-        self._log_stream_key = log_stream_key
-        self._output_stream_key = output_stream_key
+        self.message_id = message_id
+        self.reply_log_stream_key = reply_log_stream_key
+        self.reply_output_stream_key = reply_output_stream_key
+        self.remote_resource_id = remote_resource_id
         self.payload = payload
 
 
 class Consumer:
     """
     Class that handles interaction with redis as a consumer part of a consumer group
-    instance should not be shared between multiple threads because redis_client is not thread safe
-    get_job method is blocking while waiting for a job message
     """
 
     job: Optional[ConsumerJob] = None
@@ -130,11 +131,11 @@ class Consumer:
 
     @check_consumer_job
     def log(self, log_message: LogMessage) -> None:
-        self.redis_client.xadd(self.job.reply_log_stream_key, log_message.to_dict())
+        self.redis_client.xadd(self.job.reply_log_stream_key, log_message.to_json())
 
     @check_consumer_job
-    def output(self, message: dict) -> None:
-        self.redis_client.xadd(self.job.reply_output_stream_key, message)
+    def output(self, payload: dict) -> None:
+        self.redis_client.xadd(self.job.reply_output_stream_key, payload)
 
     @check_consumer_job
     def acknowledge(self):
@@ -150,7 +151,7 @@ class Consumer:
         if not self.redis_client.ping():
             raise ConnectionError("unable to ping redis server")
 
-    def new_job(self) -> ConsumerJob:
+    def new_job(self) -> None:
         """
         Wait for a message and set job field with a CustomerJob instance
         """
@@ -161,15 +162,25 @@ class Consumer:
             """
             expected_message: Optional[Tuple[str, dict]] = None
             while expected_message is None:
-                messages: List[Tuple[str, List[Tuple[str, dict]]]] = (
-                    self.redis_client.xreadgroup(
-                        self.group_name,
-                        self.consumer_name,
-                        {UPSTREAM_KEY: ">"},
-                        count=1,
-                        block=0,
+                try:
+                    messages: List[Tuple[str, List[Tuple[str, dict]]]] = (
+                        self.redis_client.xreadgroup(
+                            self.group_name,
+                            self.consumer_name,
+                            {UPSTREAM_KEY: ">"},
+                            count=1,
+                            block=0,
+                        )
                     )
-                )
+                except redis.exceptions.RedisError as exc:
+                    # try to renew client after cooldown
+                    LOG.error(
+                        f"unable to read from redis stream {UPSTREAM_KEY}: {str(exc)}"
+                    )
+                    self.redis_client.close()
+                    time.sleep(5)
+                    self.redis_client = get_redis_client()
+                    continue
 
                 # check received messages, discard if more than 1 message is received for stream
                 if len(messages) != 1:
@@ -192,11 +203,11 @@ class Consumer:
                     continue
 
                 expected_message_id, expected_messages_data = stream_messages[0]
-                if len(expected_messages_data) != 1:
+                if not isinstance(expected_messages_data, dict):
                     LOG.error(
-                        f"expected a single message data dict for message id {message_id}"
+                        f"expected a dict as message data for message id {expected_message_id}"
                     )
-                    self.acknowledge(message_id)
+                    self.acknowledge(expected_message_id)
                     continue
 
                 # check if log stream key is found, otherwise message is discarded
@@ -204,8 +215,10 @@ class Consumer:
                     LOG.error(
                         f"expected a {LOG_STREAM_FIELD_NAME} key in server message. Message is discarded"
                     )
-                    self.acknowledge(message_id)
+                    self.acknowledge(expected_message_id)
                     continue
+
+                expected_message = (expected_message_id, expected_messages_data)
 
             return expected_message
 
@@ -222,7 +235,7 @@ class Consumer:
             # instanciate ConsumerJob with minimal setup to dialog with server
             self.job = ConsumerJob(
                 message_id=message_id,
-                log_stream_key=message_data[LOG_STREAM_FIELD_NAME],
+                reply_log_stream_key=message_data[LOG_STREAM_FIELD_NAME],
                 payload=message_data,
             )
 
@@ -260,19 +273,26 @@ class Consumer:
                 )
                 LOG.error(message)
                 continue
-            self.job.remote_resource_id = message_data[PAYLOAD_FIELD_NAME]
-
             try:
-                payload = json.loads(message_data[PAYLOAD_FIELD_NAME])
-            except json.JSONDecoder:
-                message = f"unable to decode payload from message_id {message_id}, message is discarded (remote resource id: {self.job.remote_resource_id})"
+                self.job.payload = json.loads(message_data[PAYLOAD_FIELD_NAME])
+            except (json.decoder.JSONDecodeError, TypeError, ValueError) as exc:
+                message = f"unable to decode payload field from message id {message_data}, message is discarded (remote resource id: {self.job.remote_resource_id}): {str(exc)}"
                 self.flat_log(
                     level_str=logging.getLevelName(logging.ERROR),
                     message=message,
                 )
                 LOG.error(message)
                 continue
-            self.job.payload = payload
 
-            # self.job is now properly set, exit the loop
+            if not isinstance(self.job.payload, dict):
+                message = f"expected a dict as message data for message id {message_id}, message is discarded (remote resource id: {self.job.remote_resource_id})"
+                self.flat_log(
+                    level_str=logging.getLevelName(logging.ERROR),
+                    message=message,
+                )
+                LOG.error(message)
+                continue
+
+            # set self.job and exit the loop
+            self.job.payload = message_data[PAYLOAD_FIELD_NAME]
             break

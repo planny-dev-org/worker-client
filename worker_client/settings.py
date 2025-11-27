@@ -4,9 +4,9 @@ from decouple import config
 UPSTREAM_KEY = config("STREAM_KEY_INPUT", "worker_input_stream")
 
 # consumers
-CONSUMER_VERSION_MAJOR = config("CONSUMER_VERSION_MAJOR", cast=int)
-CONSUMER_VERSION_MINOR = config("CONSUMER_VERSION_MINOR", cast=int)
-CONSUMER_NAME_PREFIX = config("CONSUMER_NAME_PREFIX")
+CONSUMER_VERSION_MAJOR = config("CONSUMER_VERSION_MAJOR", 0, cast=int)
+CONSUMER_VERSION_MINOR = config("CONSUMER_VERSION_MINOR", 0, cast=int)
+CONSUMER_NAME_PREFIX = config("CONSUMER_NAME_PREFIX", "worker_client_consumer")
 
 # redis
 REDIS_SCHEME = config("REDIS_SCHEME", "redis://")
