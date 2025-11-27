@@ -14,7 +14,8 @@ dependencies = [
     "redis (>=7.0.1,<8.0.0)",
     "python-decouple (>=3.8,<4.0)",
     "black (>=25.9.0,<26.0.0)",
-    "flake8 (>=7.3.0,<8.0.0)"
+    "flake8 (>=7.3.0,<8.0.0)",
+    "pytest (>=9.0.1,<10.0.0)"
 ]
 
 [tool.poetry]

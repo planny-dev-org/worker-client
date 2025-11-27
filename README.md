@@ -35,5 +35,5 @@ Here is described the Worker 1 sequence
 This stream is created by worker if not exists.
 
 Since different versions of workers may exist with different expected payloads. A convention is to:
-- name the stream using convention "<major>_<minor>", all workers version thats fit this are expected to be able to consume messages from this stream.
+- name the stream using convention "<major>_<minor>", all workers version that fit this are expected to be able to consume messages from this stream.
 - consumer names use convention "<major>_<minor>_<patch>", so that we can identify which worker version has processed messages.
