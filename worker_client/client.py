@@ -158,16 +158,15 @@ class Consumer:
             Message(message=message, message_type="OUTPUT", level="INFO").to_json(),
         )
 
-    @check_consumer_job
     def acknowledge(self, message_id: Optional[str] = None):
         """
         acknowledge the current job message or the provided message_id (useful if consumer_job is not yet set)
         reset job field to None
         """
-        if not self.job or message_id:
+        if self.job is None and message_id is None:
             raise ValueError("No job nor message_id to acknowledge")
         self.redis_client.xack(
-            UPSTREAM_KEY, self.group_name, self.job.message_id or message_id
+            UPSTREAM_KEY, self.group_name, message_id or self.job.message_id
         )
         self.job = None
 
