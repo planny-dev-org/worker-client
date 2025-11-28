@@ -74,3 +74,27 @@ while True:
     if consumer.exit_loop:
         break  # This will make container to gracefully stop because main loop has been exited
 ```
+
+
+# Env var setup
+
+Here are default env vars setup. It can be defined in a `.ini` file that decouple can find and customized to your needs
+
+```
+# worker input stream key
+STREAM_KEY_INPUT "worker_input_stream"
+
+# consumers
+CONSUMER_VERSION_MAJOR 0
+CONSUMER_VERSION_MINOR 0
+CONSUMER_NAME_PREFIX "worker_client_consumer"
+
+# redis
+REDIS_SCHEME, "redis://"
+REDIS_HOST "localhost"
+REDIS_PORT 6379
+REDIS_DB 0
+REDIS_SSL_CERT_REQS "none"
+REDIS_SSL_CERT_PATH None
+REDIS_SSL_KEY_PATH None
+```
