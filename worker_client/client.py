@@ -1,4 +1,6 @@
 import json
+import sys
+import signal
 import time
 from typing import Optional, List, Tuple, Literal
 import datetime
@@ -112,6 +114,7 @@ class Consumer:
     group_name: str
     consumer_name: str
     redis_client: redis.Redis
+    exit_loop: bool = False
 
     def __init__(self) -> None:
         self.redis_client = get_redis_client()
@@ -128,6 +131,13 @@ class Consumer:
             if "BUSYGROUP" not in str(exc):
                 # if group already exists (BUSYGROUP) => ignore
                 raise
+
+        # setup signal handler for graceful shutdown
+        try:
+            signal.signal(signal.SIGINT, self.sig_int_handler)
+        except ValueError:
+            # signal can be set only in main thread, ignore otherwise
+            pass
 
     @check_consumer_job
     def log(self, log_message: LogMessage) -> None:
@@ -151,6 +161,12 @@ class Consumer:
         if not self.redis_client.ping():
             raise ConnectionError("unable to ping redis server")
 
+    def sig_int_handler(self, sig, frame) -> None:
+        """
+        Signal INT handler that set exit_loop to True
+        """
+        self.exit_loop = True
+
     def new_job(self) -> None:
         """
         Wait for a message and set job field with a CustomerJob instance
@@ -169,17 +185,25 @@ class Consumer:
                             self.consumer_name,
                             {UPSTREAM_KEY: ">"},
                             count=1,
-                            block=0,
+                            block=1000,
                         )
                     )
-                except redis.exceptions.RedisError as exc:
+                except redis.exceptions.RedisError as redis_exc:
                     # try to renew client after cooldown
                     LOG.error(
-                        f"unable to read from redis stream {UPSTREAM_KEY}: {str(exc)}"
+                        f"unable to read from redis stream {UPSTREAM_KEY}: {str(redis_exc)}, retrying in 5 seconds..."
                     )
                     self.redis_client.close()
                     time.sleep(5)
                     self.redis_client = get_redis_client()
+                    continue
+
+                if self.exit_loop:
+                    # exit loop requested
+                    break
+
+                if not messages:
+                    # no message retrieved, this happens if read timeout has been reached
                     continue
 
                 # check received messages, discard if more than 1 message is received for stream
@@ -230,7 +254,11 @@ class Consumer:
 
             self.health_check()
 
-            message_id, message_data = get_expected_message()
+            try:
+                message_id, message_data = get_expected_message()
+            except TypeError:
+                # get_expected_message() has been interrupted
+                break
 
             # instanciate ConsumerJob with minimal setup to dialog with server
             self.job = ConsumerJob(
