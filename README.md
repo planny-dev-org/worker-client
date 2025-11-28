@@ -90,7 +90,7 @@ CONSUMER_VERSION_MINOR 0
 CONSUMER_NAME_PREFIX "worker_client_consumer"
 
 # redis
-REDIS_SCHEME, "redis://"
+REDIS_SCHEME "redis://"
 REDIS_HOST "localhost"
 REDIS_PORT 6379
 REDIS_DB 0

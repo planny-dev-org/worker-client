@@ -186,3 +186,6 @@ class TestClient:
         assert "level" in message_data
         assert "message" in message_data
         assert json.loads(message_data["message"]) == {"result_key": "result_value"}
+
+        # acknowledge message
+        consumer.acknowledge()

@@ -157,8 +157,10 @@ class Consumer:
         )
 
     @check_consumer_job
-    def acknowledge(self):
-        self.redis_client.xack(UPSTREAM_KEY, self.group_name, self.job.message_id)
+    def acknowledge(self, message_id: Optional[str] = None):
+        self.redis_client.xack(
+            UPSTREAM_KEY, self.group_name, self.job.message_id or message_id
+        )
 
     def health_check(self) -> None:
         """
@@ -276,8 +278,6 @@ class Consumer:
 
             # send a smoke log message
             message = f"message {message_id} received by {self.consumer_name}"
-            print("TOTO")
-            print(message)
             self.log(message=message, level=logging.getLevelName(logging.INFO))
             LOG.info(message)
 
@@ -310,7 +310,7 @@ class Consumer:
             try:
                 self.job.payload = json.loads(message_data[PAYLOAD_FIELD_NAME])
             except (json.decoder.JSONDecodeError, TypeError, ValueError) as exc:
-                message = f"unable to decode payload field from message id {message_data}, message is discarded (remote resource id: {self.job.remote_resource_id}): {str(exc)}"
+                message = f"unable to decode payload field from message id {message_id}, message is discarded (remote resource id: {self.job.remote_resource_id}): {str(exc)}"
                 self.log(
                     message=message,
                     level=logging.getLevelName(logging.ERROR),
@@ -324,6 +324,5 @@ class Consumer:
                 LOG.error(message)
                 continue
 
-            # set self.job and exit the loop
-            self.job.payload = message_data[PAYLOAD_FIELD_NAME]
+            # job instance is set with a valid payload, exit the loop
             break
