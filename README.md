@@ -41,7 +41,7 @@ Since different versions of workers may exist with different expected payloads. 
 
 # Usage
 
-Here is a job process example that instanciate a consumer, wait for a job process it and start again if needed
+Here is a job process example that instantiate a consumer, wait for a job process it and start again if needed
 
 ```
 from worker_client import Consumer, LogMessage

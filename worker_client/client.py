@@ -186,7 +186,7 @@ class Consumer:
 
     def new_job(self) -> None:
         """
-        Wait for a message and set job field with a CustomerJob instance
+        Wait for a message and set job field with a ConsumerJob instance
         """
 
         def _get_expected_message() -> Tuple[str, dict]:
@@ -289,7 +289,7 @@ class Consumer:
                 # _get_expected_message() has been interrupted
                 break
 
-            # instanciate ConsumerJob with minimal setup to dialog with server (message_id and log stream key)
+            # instantiate ConsumerJob with minimal setup to dialog with server (message_id and log stream key)
             self.job = ConsumerJob(
                 message_id=message_id,
                 reply_log_stream_key=message_data[LOG_STREAM_FIELD_NAME],
