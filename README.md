@@ -37,3 +37,40 @@ This stream is created by worker if not exists.
 Since different versions of workers may exist with different expected payloads. A convention is to:
 - name the stream using convention "<major>_<minor>", all workers version that fit this are expected to be able to consume messages from this stream.
 - consumer names use convention "<major>_<minor>_<patch>", so that we can identify which worker version has processed messages.
+
+
+# Usage
+
+Here is a job process example that instanciate a consumer, wait for a job process it and start again if needed
+
+```
+from worker_client import Consumer, LogMessage
+
+consumer = Consumer()
+
+while True:
+    consumer.new_job()  # this will block until a job is received
+
+    ##########################
+    # process job & issue logs
+    ##########################
+    # some treament ...
+    consumer.log(message="pre-processing done")  # issue a log with default level INFO
+
+    # some treatment ...
+    consumer.log(message="resource ignored", level="WARNING")  # issue a warning
+    
+    # some treatment then issue an output result ...
+    consumer.output(message={"vars": {"person_one": 1}})
+  
+    #######################################
+    # process finished, acknowledge message
+    #######################################
+    consumer.acknowledge()
+
+    ####################################################################################
+    # check if consumer has been asked to gracefully terminate before taking another job
+    ####################################################################################
+    if consumer.exit_loop:
+        break  # This will make container to gracefully stop because main loop has been exited
+```

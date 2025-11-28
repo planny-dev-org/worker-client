@@ -1,5 +1,4 @@
 import json
-import sys
 import signal
 import time
 from typing import Optional, List, Tuple, Literal
@@ -32,6 +31,7 @@ from worker_client.settings import (
 
 LOG = logging.getLogger(__name__)
 LEVEL_LITERAL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
+MSG_TYPE_LITERAL = Literal["LOG", "OUTPUT"]
 
 
 def get_redis_client() -> redis.Redis:
@@ -48,35 +48,38 @@ def get_redis_client() -> redis.Redis:
 
 
 @dataclass
-class LogMessage:
+class Message:
+    """
+    dataclass structure intended to be used in call to log and output method
+    timestamp is set automatically
+    """
+
     timestamp: datetime.datetime
     message: str
-    level_str: Optional[LEVEL_LITERAL] = logging.getLevelName(logging.INFO)
+    message_type: Optional[MSG_TYPE_LITERAL]  # set by calling method
+    level: Optional[LEVEL_LITERAL] = logging.getLevelName(logging.INFO)
 
     def __init__(
         self,
-        message: str,
-        level_str: Optional[str] = logging.getLevelName(logging.INFO),
-        timestamp: Optional[datetime.datetime] = datetime.datetime.now(),
+        message: str | dict,
+        message_type: MSG_TYPE_LITERAL,
+        level: Optional[LEVEL_LITERAL] = "INFO",
     ) -> None:
-        self.timestamp = timestamp
-        self.level_str = level_str
-        self.message = message
+        if not message_type:
+            raise ValueError("message_type must be provided")
+
+        self.message = json.dumps(message)
+        self.message_type = message_type
+        self.level = level
+        self.timestamp = datetime.datetime.now()
 
     def to_json(self) -> dict:
         return {
+            "type": self.message_type,
             "timestamp": self.timestamp.isoformat(),
-            "level": self.level_str,
+            "level": self.level,
             "message": self.message,
         }
-
-    @classmethod
-    def from_json(cls, data: dict) -> "LogMessage":
-        return cls(
-            message=data.get("message", ""),
-            level_str=data.get("level", logging.getLevelName(logging.INFO)),
-            timestamp=datetime.datetime.fromisoformat(data.get("timestamp")),
-        )
 
 
 class ConsumerJob:
@@ -140,19 +143,22 @@ class Consumer:
             pass
 
     @check_consumer_job
-    def log(self, log_message: LogMessage) -> None:
-        self.redis_client.xadd(self.job.reply_log_stream_key, log_message.to_json())
+    def log(self, message: str | dict, level: LEVEL_LITERAL = "INFO") -> None:
+        self.redis_client.xadd(
+            self.job.reply_log_stream_key,
+            Message(message=message, message_type="LOG", level=level).to_json(),
+        )
 
     @check_consumer_job
-    def output(self, payload: dict) -> None:
-        self.redis_client.xadd(self.job.reply_output_stream_key, payload)
+    def output(self, message: str | dict) -> None:
+        self.redis_client.xadd(
+            self.job.reply_output_stream_key,
+            Message(message=message, message_type="OUTPUT", level="INFO").to_json(),
+        )
 
     @check_consumer_job
     def acknowledge(self):
         self.redis_client.xack(UPSTREAM_KEY, self.group_name, self.job.message_id)
-
-    def flat_log(self, level_str: LEVEL_LITERAL, message: str) -> None:
-        self.log(LogMessage(level_str=level_str, message=message))
 
     def health_check(self) -> None:
         """
@@ -163,16 +169,17 @@ class Consumer:
 
     def sig_int_handler(self, sig, frame) -> None:
         """
-        Signal INT handler that set exit_loop to True
+        Signal handler that set exit_loop to True on SIGINT, SIGTERM and SIGPIPE
         """
-        self.exit_loop = True
+        if sig in [signal.SIGINT, signal.SIGTERM, signal.SIGPIPE]:
+            self.exit_loop = True
 
     def new_job(self) -> None:
         """
         Wait for a message and set job field with a CustomerJob instance
         """
 
-        def get_expected_message() -> Tuple[str, dict]:
+        def _get_expected_message() -> Tuple[str, dict]:
             """
             Blocking method that get and check messages from a single redis stream
             """
@@ -185,7 +192,7 @@ class Consumer:
                             self.consumer_name,
                             {UPSTREAM_KEY: ">"},
                             count=1,
-                            block=1000,
+                            block=3000,
                         )
                     )
                 except redis.exceptions.RedisError as redis_exc:
@@ -255,9 +262,9 @@ class Consumer:
             self.health_check()
 
             try:
-                message_id, message_data = get_expected_message()
+                message_id, message_data = _get_expected_message()
             except TypeError:
-                # get_expected_message() has been interrupted
+                # _get_expected_message() has been interrupted
                 break
 
             # instanciate ConsumerJob with minimal setup to dialog with server
@@ -269,15 +276,17 @@ class Consumer:
 
             # send a smoke log message
             message = f"message {message_id} received by {self.consumer_name}"
-            self.flat_log(message=message, level_str=logging.getLevelName(logging.INFO))
+            print("TOTO")
+            print(message)
+            self.log(message=message, level=logging.getLevelName(logging.INFO))
             LOG.info(message)
 
             # finish message checks, now server is notified about encountered errors
             if OUTPUT_STREAM_FIELD_NAME not in message_data:
                 message = f"'{OUTPUT_STREAM_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
-                self.flat_log(
-                    level_str=logging.getLevelName(logging.ERROR),
+                self.log(
                     message=message,
+                    level=logging.getLevelName(logging.ERROR),
                 )
                 LOG.error(message)
                 continue
@@ -285,9 +294,9 @@ class Consumer:
 
             if REMOTE_RESOURCE_ID_FIELD_NAME not in message_data:
                 message = f"'{REMOTE_RESOURCE_ID_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
-                self.flat_log(
-                    level_str=logging.getLevelName(logging.ERROR),
+                self.log(
                     message=message,
+                    level=logging.getLevelName(logging.ERROR),
                 )
                 LOG.error(message)
                 continue
@@ -295,29 +304,23 @@ class Consumer:
 
             if PAYLOAD_FIELD_NAME not in message_data:
                 message = f"'{PAYLOAD_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
-                self.flat_log(
-                    level_str=logging.getLevelName(logging.ERROR),
-                    message=message,
-                )
+                self.log(message=message, level=logging.getLevelName(logging.ERROR))
                 LOG.error(message)
                 continue
             try:
                 self.job.payload = json.loads(message_data[PAYLOAD_FIELD_NAME])
             except (json.decoder.JSONDecodeError, TypeError, ValueError) as exc:
                 message = f"unable to decode payload field from message id {message_data}, message is discarded (remote resource id: {self.job.remote_resource_id}): {str(exc)}"
-                self.flat_log(
-                    level_str=logging.getLevelName(logging.ERROR),
+                self.log(
                     message=message,
+                    level=logging.getLevelName(logging.ERROR),
                 )
                 LOG.error(message)
                 continue
 
             if not isinstance(self.job.payload, dict):
                 message = f"expected a dict as message data for message id {message_id}, message is discarded (remote resource id: {self.job.remote_resource_id})"
-                self.flat_log(
-                    level_str=logging.getLevelName(logging.ERROR),
-                    message=message,
-                )
+                self.log(message=message, level=logging.getLevelName(logging.ERROR))
                 LOG.error(message)
                 continue
 
