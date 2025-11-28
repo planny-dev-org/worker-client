@@ -1,4 +1,3 @@
-import json
 import datetime
 from typing import List, Optional
 import logging
@@ -166,7 +165,7 @@ class TestClient:
         timestamp = datetime.datetime.fromisoformat(message_data["timestamp"])
         assert timestamp <= datetime.datetime.now()
         assert message_data["level"] == "INFO"
-        assert json.loads(message_data["message"]) == "this is a test log message"
+        assert message_data["message"] == "this is a test log message"
 
         ########################
         # issue an output result
@@ -185,7 +184,8 @@ class TestClient:
         assert "timestamp" in message_data
         assert "level" in message_data
         assert "message" in message_data
-        assert json.loads(message_data["message"]) == {"result_key": "result_value"}
+        # redis does not support 2+ level of deepness for dict, message has been encoded by consumer
+        assert message_data["message"] == '{"result_key": "result_value"}'
 
         # acknowledge message
         consumer.acknowledge()

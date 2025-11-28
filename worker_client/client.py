@@ -1,3 +1,4 @@
+import os
 import json
 import signal
 import time
@@ -57,7 +58,7 @@ class Message:
     timestamp: datetime.datetime
     message: str
     message_type: Optional[MSG_TYPE_LITERAL]  # set by calling method
-    level: Optional[LEVEL_LITERAL] = logging.getLevelName(logging.INFO)
+    level: Optional[LEVEL_LITERAL] = "INFO"
 
     def __init__(
         self,
@@ -68,7 +69,10 @@ class Message:
         if not message_type:
             raise ValueError("message_type must be provided")
 
-        self.message = json.dumps(message)
+        if isinstance(message, dict):
+            # redis does not support 2+ level of deepness for dict, encode to json string
+            message = json.dumps(message)
+        self.message = message
         self.message_type = message_type
         self.level = level
         self.timestamp = datetime.datetime.now()
@@ -122,9 +126,7 @@ class Consumer:
     def __init__(self) -> None:
         self.redis_client = get_redis_client()
         self.group_name = f"{CONSUMER_VERSION_MAJOR}_{CONSUMER_VERSION_MINOR}"
-        self.consumer_name = (
-            f"{CONSUMER_NAME_PREFIX}_{datetime.datetime.now().isoformat()}"
-        )
+        self.consumer_name = f"{CONSUMER_NAME_PREFIX}_{os.getpid()}"
         # init job consumer group
         try:
             self.redis_client.xgroup_create(
@@ -158,9 +160,16 @@ class Consumer:
 
     @check_consumer_job
     def acknowledge(self, message_id: Optional[str] = None):
+        """
+        acknowledge the current job message or the provided message_id (useful if consumer_job is not yet set)
+        reset job field to None
+        """
+        if not self.job or message_id:
+            raise ValueError("No job nor message_id to acknowledge")
         self.redis_client.xack(
             UPSTREAM_KEY, self.group_name, self.job.message_id or message_id
         )
+        self.job = None
 
     def health_check(self) -> None:
         """
@@ -209,6 +218,7 @@ class Consumer:
 
                 if self.exit_loop:
                     # exit loop requested
+                    LOG.info("exit loop requested, stopping new job retrieval")
                     break
 
                 if not messages:
@@ -218,27 +228,36 @@ class Consumer:
                 # check received messages, discard if more than 1 message is received for stream
                 if len(messages) != 1:
                     LOG.error(
-                        f"expected a single stream message, received {len(messages)} messages ({str(messages)}). Messages will be left pending (not acknowledged)"
+                        f"""
+                        expected a single stream message, received {len(messages)} messages ({str(messages)}).
+                        Messages will be left pending (not acknowledged)
+                        """
                     )
                     continue
 
                 if len(messages[0]) != 2:
                     LOG.error(
-                        f"expected a tuple of length 2 for stream {UPSTREAM_KEY}, received {messages[0]}. Messages will be left pending (not acknowledged)"
+                        f"""
+                        expected a tuple of length 2 for stream {UPSTREAM_KEY}, received {messages[0]}.
+                        Messages will be left pending (not acknowledged)
+                        """
                     )
                     continue
 
                 _, stream_messages = messages[0]
                 if len(stream_messages) != 1:
                     LOG.error(
-                        f"expected a single entry for stream {UPSTREAM_KEY} tuple, received {stream_messages}. Messages will be left pending (not acknowledged)"
+                        f"""
+                        expected a single entry for stream {UPSTREAM_KEY} tuple, received {stream_messages}.
+                        Messages will be left pending (not acknowledged)
+                        """
                     )
                     continue
 
                 expected_message_id, expected_messages_data = stream_messages[0]
                 if not isinstance(expected_messages_data, dict):
                     LOG.error(
-                        f"expected a dict as message data for message id {expected_message_id}"
+                        f"expected a dict as message data for message id {expected_message_id}. Message is discarded"
                     )
                     self.acknowledge(expected_message_id)
                     continue
@@ -255,25 +274,26 @@ class Consumer:
 
             return expected_message
 
-        while True:
-            # clean previous job if exists
-            if self.job is not None:
-                self.acknowledge()
-                self.job = None
+        # clean previous job if exists
+        if self.job is not None:
+            self.acknowledge()
+            self.job = None
+        self.exit_loop = False
 
-            self.health_check()
+        self.health_check()
+
+        while True:
 
             try:
                 message_id, message_data = _get_expected_message()
-            except TypeError:
+            except (TypeError, ValueError):
                 # _get_expected_message() has been interrupted
                 break
 
-            # instanciate ConsumerJob with minimal setup to dialog with server
+            # instanciate ConsumerJob with minimal setup to dialog with server (message_id and log stream key)
             self.job = ConsumerJob(
                 message_id=message_id,
                 reply_log_stream_key=message_data[LOG_STREAM_FIELD_NAME],
-                payload=message_data,
             )
 
             # send a smoke log message
@@ -283,7 +303,9 @@ class Consumer:
 
             # finish message checks, now server is notified about encountered errors
             if OUTPUT_STREAM_FIELD_NAME not in message_data:
-                message = f"'{OUTPUT_STREAM_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
+                message = f"""
+                    '{OUTPUT_STREAM_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded
+                """
                 self.log(
                     message=message,
                     level=logging.getLevelName(logging.ERROR),
@@ -293,7 +315,10 @@ class Consumer:
             self.job.reply_output_stream_key = message_data[OUTPUT_STREAM_FIELD_NAME]
 
             if REMOTE_RESOURCE_ID_FIELD_NAME not in message_data:
-                message = f"'{REMOTE_RESOURCE_ID_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
+                message = f"""
+                    '{REMOTE_RESOURCE_ID_FIELD_NAME}' field is missing from message_id {message_id},
+                    message is discarded
+                """
                 self.log(
                     message=message,
                     level=logging.getLevelName(logging.ERROR),
@@ -310,7 +335,10 @@ class Consumer:
             try:
                 self.job.payload = json.loads(message_data[PAYLOAD_FIELD_NAME])
             except (json.decoder.JSONDecodeError, TypeError, ValueError) as exc:
-                message = f"unable to decode payload field from message id {message_id}, message is discarded (remote resource id: {self.job.remote_resource_id}): {str(exc)}"
+                message = f"""
+                    unable to decode payload field from message id {message_id},
+                    message is discarded (remote resource id: {self.job.remote_resource_id}): {str(exc)}
+                """
                 self.log(
                     message=message,
                     level=logging.getLevelName(logging.ERROR),
@@ -319,10 +347,14 @@ class Consumer:
                 continue
 
             if not isinstance(self.job.payload, dict):
-                message = f"expected a dict as message data for message id {message_id}, message is discarded (remote resource id: {self.job.remote_resource_id})"
+                message = f"""
+                expected a dict as message data for message id {message_id},
+                message is discarded (remote resource id: {self.job.remote_resource_id})
+                """
                 self.log(message=message, level=logging.getLevelName(logging.ERROR))
                 LOG.error(message)
                 continue
 
-            # job instance is set with a valid payload, exit the loop
+            # job is properly set, exit the loop
+            LOG.info("job is set, exiting loop")
             break
