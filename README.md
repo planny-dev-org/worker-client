@@ -1,4 +1,3 @@
-
 **Helps planny_model workers to dialog with redis streams in order to:**
 
 - get a job payload
@@ -36,8 +35,66 @@ Here is described the Worker 1 sequence
 This stream is created by worker if not exists.
 
 Since different versions of workers may exist with different expected payloads. A convention is to:
-- name the stream using convention "<major>_<minor>", all workers version thats fit this are expected to be able to consume messages from this stream.
+- name the stream using convention "<major>_<minor>", all workers version that fit this are expected to be able to consume messages from this stream.
 - consumer names use convention "<major>_<minor>_<patch>", so that we can identify which worker version has processed messages.
 
 
+# Usage
 
+Here is a job process example that instantiate a consumer, wait for a job process it and start again if needed
+
+```
+from worker_client import Consumer, LogMessage
+
+consumer = Consumer()
+
+while True:
+    consumer.new_job()  # this will block until a job is received
+
+    ##########################
+    # process job & issue logs
+    ##########################
+    # some treament ...
+    consumer.log(message="pre-processing done")  # issue a log with default level INFO
+
+    # some treatment ...
+    consumer.log(message="resource ignored", level="WARNING")  # issue a warning
+    
+    # some treatment then issue an output result ...
+    consumer.output(message={"vars": {"person_one": 1}})
+  
+    #######################################
+    # process finished, acknowledge message
+    #######################################
+    consumer.acknowledge()
+
+    ####################################################################################
+    # check if consumer has been asked to gracefully terminate before taking another job
+    ####################################################################################
+    if consumer.exit_loop:
+        break  # This will make container to gracefully stop because main loop has been exited
+```
+
+
+# Env var setup
+
+Here are default env vars setup. It can be defined in a `.ini` file that decouple can find and customized to your needs
+
+```
+# worker input stream key
+STREAM_KEY_INPUT "worker_input_stream"
+
+# consumers
+CONSUMER_VERSION_MAJOR 0
+CONSUMER_VERSION_MINOR 0
+CONSUMER_NAME_PREFIX "worker_client_consumer"
+
+# redis
+REDIS_SCHEME "redis://"
+REDIS_HOST "localhost"
+REDIS_PORT 6379
+REDIS_DB 0
+REDIS_SSL_CERT_REQS "none"
+REDIS_SSL_CERT_PATH None
+REDIS_SSL_KEY_PATH None
+```
