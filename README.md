@@ -49,23 +49,29 @@ from worker_client import Consumer, LogMessage
 consumer = Consumer()
 
 while True:
-    consumer.new_job()  # this will block until a job is received
+    consumer.new_job()  # this will block until a job is received and update consumer.job instance 
 
     ##########################
     # process job & issue logs
     ##########################
-    # some treament ...
+    # access job payload
+    payload = consumer.job.payload
+    
+    # do some treament then issue a log ...
+    pre_processing_output = some_treatment(payload) 
     consumer.log(message="pre-processing done")  # issue a log with default level INFO
 
-    # some treatment ...
+    # do some other treatment then issue a log ...
+    some_more_treatment(pre_processing_output)
     consumer.log(message="resource ignored", level="WARNING")  # issue a warning
     
-    # some treatment then issue an output result ...
-    consumer.output(message={"vars": {"person_one": 1}})
+    # do some treatment then issue an output result ...
+    output_value_int = last_treatment(pre_processing_output)
+    consumer.output(message={"vars": {"person_one": output_value_int}})
   
-    #######################################
-    # process finished, acknowledge message
-    #######################################
+    ########################################
+    # Treatment finished, acknowledge message
+    ########################################
     consumer.acknowledge()
 
     ####################################################################################
