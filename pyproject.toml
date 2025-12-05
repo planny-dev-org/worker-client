@@ -19,7 +19,12 @@ dependencies = [
 ]
 
 [tool.poetry]
-packages = [{include = "worker_client", from = "src"}]
+name = "worker-client"
+version = "0.1.0"
+description = ""
+authors = ["Julien Dubost <julien.dubost@planny.ch>"]
+readme = "README.md"
+packages = [{include = "worker_client"}]
 
 
 [build-system]
