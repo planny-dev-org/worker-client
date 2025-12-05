@@ -3,7 +3,17 @@ import json
 import signal
 import time
 import types
-from typing import Optional, List, Tuple, Literal, Generic, TypeVar, Callable, Protocol, Union
+from typing import (
+    Optional,
+    List,
+    Tuple,
+    Literal,
+    Generic,
+    TypeVar,
+    Callable,
+    Protocol,
+    Union,
+)
 import datetime
 import logging
 from dataclasses import dataclass
@@ -157,7 +167,9 @@ class Consumer(Generic[T]):
         self.handler = handler
         # init job consumer group
         try:
-            self.redis_client.xgroup_create(UPSTREAM_KEY, self.group_name, id="0", mkstream=True)
+            self.redis_client.xgroup_create(
+                UPSTREAM_KEY, self.group_name, id="0", mkstream=True
+            )
         except redis.exceptions.ResponseError as exc:  # type: ignore[attr-defined]
             if "BUSYGROUP" not in str(exc):  # type: ignore[arg-type]
                 # if group already exists (BUSYGROUP) => ignore
@@ -292,7 +304,9 @@ class Consumer(Generic[T]):
 
                 # check if log stream key is found, otherwise message is discarded
                 if LOG_STREAM_FIELD_NAME not in expected_messages_data:
-                    LOG.error(f"expected a {LOG_STREAM_FIELD_NAME} key in server message. Message is discarded")
+                    LOG.error(
+                        f"expected a {LOG_STREAM_FIELD_NAME} key in server message. Message is discarded"
+                    )
                     self.acknowledge(expected_message_id)
                     continue
 
@@ -342,7 +356,9 @@ class Consumer(Generic[T]):
                 )
                 LOG.error(message)
                 continue
-            self.job.reply_output_stream_key = str(message_data[OUTPUT_STREAM_FIELD_NAME])
+            self.job.reply_output_stream_key = str(
+                message_data[OUTPUT_STREAM_FIELD_NAME]
+            )
 
             if REMOTE_RESOURCE_ID_FIELD_NAME not in message_data:
                 message = f"""
@@ -355,7 +371,9 @@ class Consumer(Generic[T]):
                 )
                 LOG.error(message)
                 continue
-            self.job.remote_resource_id = str(message_data[REMOTE_RESOURCE_ID_FIELD_NAME])
+            self.job.remote_resource_id = str(
+                message_data[REMOTE_RESOURCE_ID_FIELD_NAME]
+            )
 
             if PAYLOAD_FIELD_NAME not in message_data:
                 message = f"'{PAYLOAD_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"

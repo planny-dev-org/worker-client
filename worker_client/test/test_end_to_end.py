@@ -33,7 +33,10 @@ def task_decoder(raw: bytes) -> TaskMessage:
     """Decoder that converts JSON bytes to TaskMessage"""
     data = json.loads(raw.decode("utf-8"))
     return TaskMessage(
-        task_id=data["task_id"], action=data["action"], priority=data["priority"], metadata=data.get("metadata", {})
+        task_id=data["task_id"],
+        action=data["action"],
+        priority=data["priority"],
+        metadata=data.get("metadata", {}),
     )
 
 
@@ -54,14 +57,19 @@ class TestEndToEnd:
 
         # Create a typed message
         original_message = TaskMessage(
-            task_id="task_12345", action="process_data", priority=1, metadata={"source": "test", "env": "staging"}
+            task_id="task_12345",
+            action="process_data",
+            priority=1,
+            metadata={"source": "test", "env": "staging"},
         )
 
         # Producer: Send message to Redis (simulate what a producer would do)
         message_payload = {
             LOG_STREAM_FIELD_NAME: "worker:logs:e2e_test",
             OUTPUT_STREAM_FIELD_NAME: "worker:output:e2e_test",
-            PAYLOAD_FIELD_NAME: json.dumps(asdict(original_message)),  # Encode as JSON string
+            PAYLOAD_FIELD_NAME: json.dumps(
+                asdict(original_message)
+            ),  # Encode as JSON string
             REMOTE_RESOURCE_ID_FIELD_NAME: "resource_e2e_test",
         }
 
@@ -75,7 +83,9 @@ class TestEndToEnd:
             received_messages[0] = message
 
         # Create consumer with typed decoder and handler
-        consumer: Consumer[TaskMessage] = Consumer(decoder=task_decoder, handler=test_handler)
+        consumer: Consumer[TaskMessage] = Consumer(
+            decoder=task_decoder, handler=test_handler
+        )
 
         # Run consumer in a thread (since new_job is blocking)
         def run_consumer() -> None:
@@ -91,7 +101,9 @@ class TestEndToEnd:
         thread.join(timeout=5)
 
         # Validate the received message
-        assert received_messages[0] is not None, "Handler should have received a message"
+        assert (
+            received_messages[0] is not None
+        ), "Handler should have received a message"
         received = received_messages[0]
 
         # Validate all fields match the original
@@ -106,7 +118,9 @@ class TestEndToEnd:
         assert consumer.job.remote_resource_id == "resource_e2e_test"
 
         # Validate payload is a string (not bytes - proving decode_responses=True works)
-        assert isinstance(consumer.job.payload, str), "Payload should be a string from Redis"
+        assert isinstance(
+            consumer.job.payload, str
+        ), "Payload should be a string from Redis"
 
         # Validate payload can be parsed as JSON
         payload_dict = json.loads(consumer.job.payload)
@@ -149,7 +163,9 @@ class TestEndToEnd:
         def capture_handler(message: TaskMessage) -> None:
             received_messages[0] = message
 
-        consumer: Consumer[TaskMessage] = Consumer(decoder=task_decoder, handler=capture_handler)
+        consumer: Consumer[TaskMessage] = Consumer(
+            decoder=task_decoder, handler=capture_handler
+        )
 
         # Manually run the workflow
         consumer.new_job()
@@ -185,7 +201,10 @@ class TestEndToEnd:
 
         # Produce a message
         test_message = TaskMessage(
-            task_id="run_test_123", action="full_workflow", priority=5, metadata={"test_type": "e2e_with_run"}
+            task_id="run_test_123",
+            action="full_workflow",
+            priority=5,
+            metadata={"test_type": "e2e_with_run"},
         )
 
         message_payload = {
@@ -207,7 +226,9 @@ class TestEndToEnd:
             processing_complete.set()
 
         # Create consumer
-        consumer: Consumer[TaskMessage] = Consumer(decoder=task_decoder, handler=handling_handler)
+        consumer: Consumer[TaskMessage] = Consumer(
+            decoder=task_decoder, handler=handling_handler
+        )
 
         # Run consumer in thread
         def run_consumer_loop() -> None:

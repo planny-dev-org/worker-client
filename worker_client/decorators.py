@@ -13,7 +13,9 @@ def check_consumer_job(func: F) -> F:
     @wraps(func)
     def wrapper(instance: Any, *args: Any, **kwargs: Any) -> Any:
         if not instance.job:
-            raise RuntimeError("no pending job associated with this consumer, can't log message")
+            raise RuntimeError(
+                "no pending job associated with this consumer, can't log message"
+            )
         return func(instance, *args, **kwargs)
 
     return wrapper  # type: ignore[return-value]
