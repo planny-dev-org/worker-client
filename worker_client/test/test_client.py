@@ -84,9 +84,7 @@ class TestClient:
         _, stream_messages = messages[0]  # type: ignore[misc]
         _, message_data = stream_messages[0]  # type: ignore[misc]
         assert "message" in message_data
-        assert (
-            "unable to decode payload field from message id " in message_data["message"]
-        )
+        assert "unable to decode payload field from message id " in message_data["message"]
 
     @flush_all_cache
     def test_payload_ok(self, job_message_ok: dict[str, str]) -> None:

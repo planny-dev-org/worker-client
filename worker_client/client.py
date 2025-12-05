@@ -43,16 +43,15 @@ JsonDict = dict[str, Union[str, int, float, bool, None]]
 RedisStreamData = dict[str, object]
 
 # Generic type variable for message payload (covariant for Protocol)
-T_co = TypeVar('T_co', covariant=True)
+T_co = TypeVar("T_co", covariant=True)
 # Generic type variable for Consumer and ConsumerJob
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 class Decoder(Protocol[T_co]):
     """Protocol for decoder functions that transform raw bytes to typed messages."""
-    
-    def __call__(self, raw: bytes) -> T_co:
-        ...
+
+    def __call__(self, raw: bytes) -> T_co: ...
 
 
 def get_redis_client() -> redis.Redis:
@@ -132,7 +131,6 @@ class ConsumerJob:
 # Generic type variable for Consumer (reusing T from ConsumerJob)
 
 
-
 class Consumer(Generic[T]):
     """
     Class that handles interaction with redis as a consumer part of a consumer group.
@@ -159,9 +157,7 @@ class Consumer(Generic[T]):
         self.handler = handler
         # init job consumer group
         try:
-            self.redis_client.xgroup_create(
-                UPSTREAM_KEY, self.group_name, id="0", mkstream=True
-            )
+            self.redis_client.xgroup_create(UPSTREAM_KEY, self.group_name, id="0", mkstream=True)
         except redis.exceptions.ResponseError as exc:  # type: ignore[attr-defined]
             if "BUSYGROUP" not in str(exc):  # type: ignore[arg-type]
                 # if group already exists (BUSYGROUP) => ignore
@@ -238,9 +234,11 @@ class Consumer(Generic[T]):
                     )
                 except redis.exceptions.RedisError as redis_exc:  # type: ignore[attr-defined]
                     # try to renew client after cooldown
-                    LOG.error(
-                        f"unable to read from redis stream {UPSTREAM_KEY}: {str(redis_exc)}, retrying in 5 seconds..."  # type: ignore[arg-type]
+                    error_msg = (
+                        f"unable to read from redis stream {UPSTREAM_KEY}: "
+                        f"{str(redis_exc)}, retrying in 5 seconds..."  # type: ignore[arg-type]
                     )
+                    LOG.error(error_msg)
                     self.redis_client.close()
                     time.sleep(5)
                     self.redis_client = get_redis_client()
@@ -294,9 +292,7 @@ class Consumer(Generic[T]):
 
                 # check if log stream key is found, otherwise message is discarded
                 if LOG_STREAM_FIELD_NAME not in expected_messages_data:
-                    LOG.error(
-                        f"expected a {LOG_STREAM_FIELD_NAME} key in server message. Message is discarded"
-                    )
+                    LOG.error(f"expected a {LOG_STREAM_FIELD_NAME} key in server message. Message is discarded")
                     self.acknowledge(expected_message_id)
                     continue
 
@@ -366,7 +362,7 @@ class Consumer(Generic[T]):
                 self.log(message=message, level="ERROR")
                 LOG.error(message)
                 continue
-            
+
             # Validate that payload is a valid JSON string
             payload_value = message_data[PAYLOAD_FIELD_NAME]
             if not isinstance(payload_value, str):
@@ -377,7 +373,7 @@ class Consumer(Generic[T]):
                 self.log(message=message, level="ERROR")
                 LOG.error(message)
                 continue
-            
+
             try:
                 # Validate it's valid JSON (but keep as string)
                 json.loads(payload_value)
@@ -416,20 +412,20 @@ class Consumer(Generic[T]):
             try:
                 # Get a new job from the stream
                 self.new_job()
-                
+
                 if self.job is None or self.job.payload is None:
                     # Job retrieval was interrupted or invalid
                     continue
 
                 # Encode the JSON string payload as bytes for the decoder
-                raw_payload = self.job.payload.encode('utf-8')
-                
+                raw_payload = self.job.payload.encode("utf-8")
+
                 # Decode to typed message T
                 message: T = self.decoder(raw_payload)
-                
+
                 # Handle the typed message
                 self.handler(message)
-                
+
                 # Acknowledge the job
                 self.acknowledge()
 
