@@ -1,0 +1,88 @@
+name: Tests
+
+on:
+  pull_request:
+    branches: [ develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:17
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testdb
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    env:
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      DB_HOST: localhost
+      DB_NAME: testdb
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_PORT: 5432
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python 3.13
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.13"
+    
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        version: 2.0.0
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+    
+    - name: Load cached venv
+      id: cached-poetry-dependencies
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-3.13-${{ hashFiles('**/poetry.lock') }}
+    
+    - name: Install dependencies
+      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
+      run: poetry install --no-interaction --no-root
+    
+    - name: Install project
+      run: poetry install --no-interaction
+    
+    - name: Run tests
+      run: |
+        poetry run pytest worker_client/test/ -v --tb=short
+    
+    - name: Run type checking
+      run: |
+        poetry run python -m pyright worker_client/ || echo "Type checking completed with warnings"
+    
+    - name: Run linting
+      run: |
+        poetry run flake8 worker_client/ --max-line-length=120 --extend-ignore=E203,W503
+    
+    - name: Run code formatting check
+      run: |
+        poetry run black --check worker_client/

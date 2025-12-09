@@ -1,5 +1,6 @@
 import decorator
 import json
+from typing import Any, Callable
 
 import redis
 import pytest
@@ -12,18 +13,18 @@ from worker_client.constants import (
 )
 
 
-def flush_all_cache(func):
-    def wrapper(instance, *args, **kwargs):
+def flush_all_cache(func: Callable[..., Any]) -> Callable[..., Any]:
+    def wrapper(instance: Any, *args: Any, **kwargs: Any) -> Any:
         redis_api = redis.Redis()
-        redis_api.flushall()
+        redis_api.flushall()  # type: ignore[misc]
         ret = func(*args, **kwargs)
         return ret
 
-    return decorator.decorator(wrapper, func)
+    return decorator.decorator(wrapper, func)  # type: ignore[return-value]
 
 
 @pytest.fixture
-def job_message_str_payload() -> dict:
+def job_message_str_payload() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
         OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
@@ -33,7 +34,7 @@ def job_message_str_payload() -> dict:
 
 
 @pytest.fixture
-def job_message_unencoded_payload() -> dict:
+def job_message_unencoded_payload() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
         OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
@@ -43,7 +44,7 @@ def job_message_unencoded_payload() -> dict:
 
 
 @pytest.fixture
-def job_message_ok() -> dict:
+def job_message_ok() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
         OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
@@ -53,7 +54,7 @@ def job_message_ok() -> dict:
 
 
 @pytest.fixture
-def job_message_missing_payload() -> dict:
+def job_message_missing_payload() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
         OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
@@ -62,27 +63,27 @@ def job_message_missing_payload() -> dict:
 
 
 @pytest.fixture
-def job_message_missing_resource_id() -> dict:
+def job_message_missing_resource_id() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
         OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
-        PAYLOAD_FIELD_NAME: {"task": "process_data", "data_id": 42},
+        PAYLOAD_FIELD_NAME: json.dumps({"task": "process_data", "data_id": 42}),
     }
 
 
 @pytest.fixture
-def job_message_missing_log_key() -> dict:
+def job_message_missing_log_key() -> dict[str, str]:
     return {
         OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
-        PAYLOAD_FIELD_NAME: {"task": "process_data", "data_id": 42},
+        PAYLOAD_FIELD_NAME: json.dumps({"task": "process_data", "data_id": 42}),
         REMOTE_RESOURCE_ID_FIELD_NAME: "resource_67890",
     }
 
 
 @pytest.fixture
-def job_message_missing_output_key() -> dict:
+def job_message_missing_output_key() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
-        PAYLOAD_FIELD_NAME: {"task": "process_data", "data_id": 42},
+        PAYLOAD_FIELD_NAME: json.dumps({"task": "process_data", "data_id": 42}),
         REMOTE_RESOURCE_ID_FIELD_NAME: "resource_67890",
     }

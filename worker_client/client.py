@@ -2,7 +2,18 @@ import os
 import json
 import signal
 import time
-from typing import Optional, List, Tuple, Literal
+import types
+from typing import (
+    Optional,
+    List,
+    Tuple,
+    Literal,
+    Generic,
+    TypeVar,
+    Callable,
+    Protocol,
+    Union,
+)
 import datetime
 import logging
 from dataclasses import dataclass
@@ -34,6 +45,24 @@ LOG = logging.getLogger(__name__)
 LEVEL_LITERAL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 MSG_TYPE_LITERAL = Literal["LOG", "OUTPUT"]
 
+# Type alias for JSON-compatible dict values (used for messages/logs sent to Redis)
+JsonDict = dict[str, Union[str, int, float, bool, None]]
+
+# Type alias for Redis stream data (data received from Redis - runtime values from external source)
+# Using object to indicate this is opaque data from Redis that we validate at runtime
+RedisStreamData = dict[str, object]
+
+# Generic type variable for message payload (covariant for Protocol)
+T_co = TypeVar("T_co", covariant=True)
+# Generic type variable for Consumer and ConsumerJob
+T = TypeVar("T")
+
+
+class Decoder(Protocol[T_co]):
+    """Protocol for decoder functions that transform raw bytes to typed messages."""
+
+    def __call__(self, raw: bytes) -> T_co: ...
+
 
 def get_redis_client() -> redis.Redis:
     return redis.Redis(
@@ -62,22 +91,18 @@ class Message:
 
     def __init__(
         self,
-        message: str | dict,
+        message: Union[str, JsonDict],
         message_type: MSG_TYPE_LITERAL,
         level: Optional[LEVEL_LITERAL] = "INFO",
     ) -> None:
-        if not message_type:
-            raise ValueError("message_type must be provided")
-
         if isinstance(message, dict):
-            # redis does not support 2+ level of deepness for dict, encode to json string
             message = json.dumps(message)
         self.message = message
         self.message_type = message_type
         self.level = level
         self.timestamp = datetime.datetime.now()
 
-    def to_json(self) -> dict:
+    def to_json(self) -> JsonDict:
         return {
             "type": self.message_type,
             "timestamp": self.timestamp.isoformat(),
@@ -88,14 +113,15 @@ class Message:
 
 class ConsumerJob:
     """
-    Worker job class that holds job related stream keys and expose methods to interact properly with remote backend
+    Worker job class that holds job related stream keys and expose methods to interact properly with remote backend.
+    The payload is stored as a raw JSON string from Redis and will be decoded to type T by the Consumer's decoder.
     """
 
     message_id: str
     reply_log_stream_key: str
     reply_output_stream_key: Optional[str]
     remote_resource_id: Optional[str]
-    payload: Optional[dict]
+    payload: Optional[str]  # Raw JSON string from Redis
 
     def __init__(
         self,
@@ -103,7 +129,7 @@ class ConsumerJob:
         reply_log_stream_key: str,
         reply_output_stream_key: Optional[str] = None,
         remote_resource_id: Optional[str] = None,
-        payload: Optional[dict] = None,
+        payload: Optional[str] = None,
     ) -> None:
         self.message_id = message_id
         self.reply_log_stream_key = reply_log_stream_key
@@ -112,28 +138,40 @@ class ConsumerJob:
         self.payload = payload
 
 
-class Consumer:
+# Generic type variable for Consumer (reusing T from ConsumerJob)
+
+
+class Consumer(Generic[T]):
     """
-    Class that handles interaction with redis as a consumer part of a consumer group
+    Class that handles interaction with redis as a consumer part of a consumer group.
+    Generic over T which is the type of decoded messages that the handler will receive.
     """
 
     job: Optional[ConsumerJob] = None
     group_name: str
     consumer_name: str
-    redis_client: redis.Redis
+    redis_client: redis.Redis  # type: ignore[type-arg]
     exit_loop: bool = False
+    decoder: Optional[Decoder[T]]
+    handler: Optional[Callable[[T], None]]
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        decoder: Optional[Decoder[T]] = None,
+        handler: Optional[Callable[[T], None]] = None,
+    ) -> None:
         self.redis_client = get_redis_client()
         self.group_name = f"{CONSUMER_VERSION_MAJOR}_{CONSUMER_VERSION_MINOR}"
         self.consumer_name = f"{CONSUMER_NAME_PREFIX}_{os.getpid()}"
+        self.decoder = decoder
+        self.handler = handler
         # init job consumer group
         try:
             self.redis_client.xgroup_create(
                 UPSTREAM_KEY, self.group_name, id="0", mkstream=True
             )
-        except redis.exceptions.ResponseError as exc:
-            if "BUSYGROUP" not in str(exc):
+        except redis.exceptions.ResponseError as exc:  # type: ignore[attr-defined]
+            if "BUSYGROUP" not in str(exc):  # type: ignore[arg-type]
                 # if group already exists (BUSYGROUP) => ignore
                 raise
 
@@ -145,20 +183,20 @@ class Consumer:
             pass
 
     @check_consumer_job
-    def log(self, message: str | dict, level: LEVEL_LITERAL = "INFO") -> None:
+    def log(self, message: Union[str, JsonDict], level: LEVEL_LITERAL = "INFO") -> None:
         self.redis_client.xadd(
-            self.job.reply_log_stream_key,
-            Message(message=message, message_type="LOG", level=level).to_json(),
+            self.job.reply_log_stream_key,  # type: ignore[union-attr]
+            Message(message=message, message_type="LOG", level=level).to_json(),  # type: ignore[arg-type]
         )
 
     @check_consumer_job
-    def output(self, message: str | dict) -> None:
+    def output(self, message: Union[str, JsonDict]) -> None:
         self.redis_client.xadd(
-            self.job.reply_output_stream_key,
-            Message(message=message, message_type="OUTPUT", level="INFO").to_json(),
+            self.job.reply_output_stream_key,  # type: ignore[union-attr]
+            Message(message=message, message_type="OUTPUT", level="INFO").to_json(),  # type: ignore[arg-type]
         )
 
-    def acknowledge(self, message_id: Optional[str] = None):
+    def acknowledge(self, message_id: Optional[str] = None) -> None:
         """
         acknowledge the current job message or the provided message_id (useful if consumer_job is not yet set)
         reset job field to None
@@ -166,7 +204,7 @@ class Consumer:
         if self.job is None and message_id is None:
             raise ValueError("No job nor message_id to acknowledge")
         self.redis_client.xack(
-            UPSTREAM_KEY, self.group_name, message_id or self.job.message_id
+            UPSTREAM_KEY, self.group_name, message_id or self.job.message_id  # type: ignore[union-attr]
         )
         self.job = None
 
@@ -174,10 +212,10 @@ class Consumer:
         """
         Raise a ConnectionError if Redis server ping fails
         """
-        if not self.redis_client.ping():
+        if not self.redis_client.ping():  # type: ignore[misc]
             raise ConnectionError("unable to ping redis server")
 
-    def sig_int_handler(self, sig, frame) -> None:
+    def sig_int_handler(self, sig: int, frame: Optional[types.FrameType]) -> None:
         """
         Signal handler that set exit_loop to True on SIGINT, SIGTERM and SIGPIPE
         """
@@ -189,15 +227,16 @@ class Consumer:
         Wait for a message and set job field with a ConsumerJob instance
         """
 
-        def _get_expected_message() -> Tuple[str, dict]:
+        def _get_expected_message() -> Optional[Tuple[str, RedisStreamData]]:
             """
-            Blocking method that get and check messages from a single redis stream
+            Blocking method that get and check messages from a single redis stream.
+            Returns None if exit_loop is requested.
             """
-            expected_message: Optional[Tuple[str, dict]] = None
+            expected_message: Optional[Tuple[str, RedisStreamData]] = None
             while expected_message is None:
                 try:
-                    messages: List[Tuple[str, List[Tuple[str, dict]]]] = (
-                        self.redis_client.xreadgroup(
+                    messages: List[Tuple[str, List[Tuple[str, RedisStreamData]]]] = (
+                        self.redis_client.xreadgroup(  # type: ignore[assignment]
                             self.group_name,
                             self.consumer_name,
                             {UPSTREAM_KEY: ">"},
@@ -205,11 +244,13 @@ class Consumer:
                             block=3000,
                         )
                     )
-                except redis.exceptions.RedisError as redis_exc:
+                except redis.exceptions.RedisError as redis_exc:  # type: ignore[attr-defined]
                     # try to renew client after cooldown
-                    LOG.error(
-                        f"unable to read from redis stream {UPSTREAM_KEY}: {str(redis_exc)}, retrying in 5 seconds..."
+                    error_msg = (
+                        f"unable to read from redis stream {UPSTREAM_KEY}: "
+                        f"{str(redis_exc)}, retrying in 5 seconds..."  # type: ignore[arg-type]
                     )
+                    LOG.error(error_msg)
                     self.redis_client.close()
                     time.sleep(5)
                     self.redis_client = get_redis_client()
@@ -254,7 +295,7 @@ class Consumer:
                     continue
 
                 expected_message_id, expected_messages_data = stream_messages[0]
-                if not isinstance(expected_messages_data, dict):
+                if not isinstance(expected_messages_data, dict):  # type: ignore[arg-type]
                     LOG.error(
                         f"expected a dict as message data for message id {expected_message_id}. Message is discarded"
                     )
@@ -284,7 +325,11 @@ class Consumer:
         while True:
 
             try:
-                message_id, message_data = _get_expected_message()
+                result = _get_expected_message()
+                if result is None:
+                    # _get_expected_message() was interrupted
+                    break
+                message_id, message_data = result
             except (TypeError, ValueError):
                 # _get_expected_message() has been interrupted
                 break
@@ -292,12 +337,12 @@ class Consumer:
             # instantiate ConsumerJob with minimal setup to dialog with server (message_id and log stream key)
             self.job = ConsumerJob(
                 message_id=message_id,
-                reply_log_stream_key=message_data[LOG_STREAM_FIELD_NAME],
+                reply_log_stream_key=str(message_data[LOG_STREAM_FIELD_NAME]),
             )
 
             # send a smoke log message
             message = f"message {message_id} received by {self.consumer_name}"
-            self.log(message=message, level=logging.getLevelName(logging.INFO))
+            self.log(message=message, level="INFO")
             LOG.info(message)
 
             # finish message checks, now server is notified about encountered errors
@@ -307,11 +352,13 @@ class Consumer:
                 """
                 self.log(
                     message=message,
-                    level=logging.getLevelName(logging.ERROR),
+                    level="ERROR",
                 )
                 LOG.error(message)
                 continue
-            self.job.reply_output_stream_key = message_data[OUTPUT_STREAM_FIELD_NAME]
+            self.job.reply_output_stream_key = str(
+                message_data[OUTPUT_STREAM_FIELD_NAME]
+            )
 
             if REMOTE_RESOURCE_ID_FIELD_NAME not in message_data:
                 message = f"""
@@ -320,19 +367,35 @@ class Consumer:
                 """
                 self.log(
                     message=message,
-                    level=logging.getLevelName(logging.ERROR),
+                    level="ERROR",
                 )
                 LOG.error(message)
                 continue
-            self.job.remote_resource_id = message_data[REMOTE_RESOURCE_ID_FIELD_NAME]
+            self.job.remote_resource_id = str(
+                message_data[REMOTE_RESOURCE_ID_FIELD_NAME]
+            )
 
             if PAYLOAD_FIELD_NAME not in message_data:
                 message = f"'{PAYLOAD_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
-                self.log(message=message, level=logging.getLevelName(logging.ERROR))
+                self.log(message=message, level="ERROR")
                 LOG.error(message)
                 continue
+
+            # Validate that payload is a valid JSON string
+            payload_value = message_data[PAYLOAD_FIELD_NAME]
+            if not isinstance(payload_value, str):
+                message = f"""
+                expected a JSON string as payload for message id {message_id},
+                message is discarded (remote resource id: {self.job.remote_resource_id})
+                """
+                self.log(message=message, level="ERROR")
+                LOG.error(message)
+                continue
+
             try:
-                self.job.payload = json.loads(message_data[PAYLOAD_FIELD_NAME])
+                # Validate it's valid JSON (but keep as string)
+                json.loads(payload_value)
+                self.job.payload = payload_value
             except (json.decoder.JSONDecodeError, TypeError, ValueError) as exc:
                 message = f"""
                     unable to decode payload field from message id {message_id},
@@ -340,20 +403,60 @@ class Consumer:
                 """
                 self.log(
                     message=message,
-                    level=logging.getLevelName(logging.ERROR),
+                    level="ERROR",
                 )
                 LOG.error(message)
                 continue
-
-            if not isinstance(self.job.payload, dict):
-                message = f"""
-                expected a dict as message data for message id {message_id},
-                message is discarded (remote resource id: {self.job.remote_resource_id})
-                """
-                self.log(message=message, level=logging.getLevelName(logging.ERROR))
                 LOG.error(message)
                 continue
 
             # job is properly set, exit the loop
             LOG.info("job is set, exiting loop")
             break
+
+    def run(self) -> None:
+        """
+        Main worker loop that processes jobs using the provided decoder and handler.
+        The decoder receives the raw JSON string as bytes and returns a typed message T.
+        """
+        if self.decoder is None:
+            raise ValueError("Decoder must be provided to run the consumer")
+        if self.handler is None:
+            raise ValueError("Handler must be provided to run the consumer")
+
+        print(f"Consumer[T] listening on: {UPSTREAM_KEY}")
+
+        while not self.exit_loop:
+            try:
+                # Get a new job from the stream
+                self.new_job()
+
+                if self.job is None or self.job.payload is None:
+                    # Job retrieval was interrupted or invalid
+                    continue
+
+                # Encode the JSON string payload as bytes for the decoder
+                raw_payload = self.job.payload.encode("utf-8")
+
+                # Decode to typed message T
+                message: T = self.decoder(raw_payload)
+
+                # Handle the typed message
+                self.handler(message)
+
+                # Acknowledge the job
+                self.acknowledge()
+
+            except Exception as ex:
+                error_msg = f"Consumer error: {ex}"
+                LOG.error(error_msg)
+                print(error_msg)
+                if self.job:
+                    try:
+                        self.log(message=error_msg, level="ERROR")
+                    except Exception:
+                        pass  # If logging fails, continue
+                    self.acknowledge()
+                time.sleep(1)
+
+        print("Consumer[T] shutting down gracefully.")

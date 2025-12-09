@@ -1,18 +1,33 @@
-from decouple import config
+from typing import cast, Optional
+from decouple import config  # type: ignore[import-untyped]
 
 # redis upstream key where job payloads are read from
-UPSTREAM_KEY = config("STREAM_KEY_INPUT", "worker_input_stream")
+UPSTREAM_KEY: str = cast(
+    str, config("STREAM_KEY_INPUT", default="worker_input_stream", cast=str)
+)
 
 # consumers
-CONSUMER_VERSION_MAJOR = config("CONSUMER_VERSION_MAJOR", 0, cast=int)
-CONSUMER_VERSION_MINOR = config("CONSUMER_VERSION_MINOR", 0, cast=int)
-CONSUMER_NAME_PREFIX = config("CONSUMER_NAME_PREFIX", "worker_client_consumer")
+CONSUMER_VERSION_MAJOR: int = cast(
+    int, config("CONSUMER_VERSION_MAJOR", default=0, cast=int)
+)
+CONSUMER_VERSION_MINOR: int = cast(
+    int, config("CONSUMER_VERSION_MINOR", default=0, cast=int)
+)
+CONSUMER_NAME_PREFIX: str = cast(
+    str, config("CONSUMER_NAME_PREFIX", default="worker_client_consumer", cast=str)
+)
 
 # redis
-REDIS_SCHEME = config("REDIS_SCHEME", "redis://")
-REDIS_HOST = config("REDIS_HOST", "localhost")
-REDIS_PORT = config("REDIS_PORT", 6379, cast=int)
-REDIS_DB = config("REDIS_DB", 0, cast=int)
-REDIS_SSL_CERT_REQS = config("REDIS_SSL_CERT_REQS", "none")
-REDIS_SSL_CERT_PATH = config("REDIS_SSL_CERT_PATH", None)
-REDIS_SSL_KEY_PATH = config("REDIS_SSL_KEY_PATH", None)
+REDIS_SCHEME: str = cast(str, config("REDIS_SCHEME", default="redis://", cast=str))
+REDIS_HOST: str = cast(str, config("REDIS_HOST", default="localhost", cast=str))
+REDIS_PORT: int = cast(int, config("REDIS_PORT", default=6379, cast=int))
+REDIS_DB: int = cast(int, config("REDIS_DB", default=0, cast=int))
+REDIS_SSL_CERT_REQS: str = cast(
+    str, config("REDIS_SSL_CERT_REQS", default="none", cast=str)
+)
+REDIS_SSL_CERT_PATH: Optional[str] = cast(
+    Optional[str], config("REDIS_SSL_CERT_PATH", default=None, cast=lambda x: x if x else None)  # type: ignore[misc]
+)
+REDIS_SSL_KEY_PATH: Optional[str] = cast(
+    Optional[str], config("REDIS_SSL_KEY_PATH", default=None, cast=lambda x: x if x else None)  # type: ignore[misc]
+)

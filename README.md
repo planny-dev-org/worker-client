@@ -5,6 +5,50 @@
 - send ongoing results
 - send final result and acknowledge message
 
+## 🎉 Full Type Hints Support
+
+The library supports full generic types with `Consumer[T]`, allowing you to work with strongly-typed messages.
+
+### Architecture
+
+**JSON String Flow:**
+1. **Redis** stores the payload as a JSON string
+2. **Decoder** receives `bytes` (JSON string encoded as UTF-8) and returns typed object `T`
+3. **Handler** receives the fully typed object `T`
+
+```python
+from worker_client import Consumer
+from dataclasses import dataclass
+import json
+
+@dataclass
+class MyMessage:
+    task_id: str
+    action: str
+
+def my_decoder(raw: bytes) -> MyMessage:
+    """Decoder converts JSON bytes → typed object"""
+    data = json.loads(raw.decode('utf-8'))
+    return MyMessage(**data)
+
+def my_handler(message: MyMessage) -> None:
+    """Handler receives typed object"""
+    print(f"Task: {message.task_id}")  # ✅ Fully typed!
+
+consumer: Consumer[MyMessage] = Consumer(
+    decoder=my_decoder,
+    handler=my_handler
+)
+consumer.run()  # Automatic processing with full type safety
+```
+
+### Key Concepts
+
+- **`Consumer[T]`**: Generic consumer that processes messages of type `T`
+- **`Decoder[T]`**: Protocol for functions that convert `bytes` → `T`
+- **`ConsumerJob`**: Holds the raw JSON string payload from Redis
+- **Type Safety**: The decoder ensures you get the exact type you expect
+
 # Flow diagram
 
 Generated with `sequence_diagram.md` typora file (see in this repo) 
@@ -40,6 +84,38 @@ Since different versions of workers may exist with different expected payloads. 
 
 
 # Usage
+
+## New Typed API (Recommended)
+
+For full type safety, use the `Consumer[T]` generic approach:
+
+```python
+from worker_client import Consumer
+from dataclasses import dataclass
+import json
+
+@dataclass
+class JobPayload:
+    task_id: str
+    data: dict
+
+def decoder(raw: bytes) -> JobPayload:
+    return JobPayload(**json.loads(raw.decode('utf-8')))
+
+def handler(message: JobPayload) -> None:
+    print(f"Processing {message.task_id}")
+    # Your logic here
+
+consumer: Consumer[JobPayload] = Consumer(
+    decoder=decoder,
+    handler=handler
+)
+consumer.run()  # Handles everything automatically
+```
+
+## Legacy API (Still Supported)
+
+The original API continues to work for backward compatibility:
 
 Here is a job process example that instantiate a consumer, wait for a job process it and start again if needed
 
