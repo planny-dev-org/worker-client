@@ -30,3 +30,16 @@ packages = [{include = "worker_client"}]
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+include = ["worker_client"]
+exclude = ["**/__pycache__", "**/.pytest_cache"]
+stubPath = "stubs"
+typeCheckingMode = "standard"
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "stubs"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

@@ -170,7 +170,7 @@ class Consumer(Generic[T]):
             self.redis_client.xgroup_create(
                 UPSTREAM_KEY, self.group_name, id="0", mkstream=True
             )
-        except redis.exceptions.ResponseError as exc:  # type: ignore[attr-defined]
+        except redis.exceptions.ResponseError as exc:
             if "BUSYGROUP" not in str(exc):  # type: ignore[arg-type]
                 # if group already exists (BUSYGROUP) => ignore
                 raise
@@ -244,7 +244,7 @@ class Consumer(Generic[T]):
                             block=3000,
                         )
                     )
-                except redis.exceptions.RedisError as redis_exc:  # type: ignore[attr-defined]
+                except redis.exceptions.RedisError as redis_exc:
                     # try to renew client after cooldown
                     error_msg = (
                         f"unable to read from redis stream {UPSTREAM_KEY}: "
