@@ -1,4 +1,5 @@
 import decorator
+
 import json
 from typing import Any, Callable
 
@@ -16,7 +17,7 @@ from worker_client.constants import (
 def flush_all_cache(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(instance: Any, *args: Any, **kwargs: Any) -> Any:
         redis_api = redis.Redis()
-        redis_api.flushall()  # type: ignore[misc]
+        redis_api.flushall()  # type: ignore[dmisc]
         ret = func(*args, **kwargs)
         return ret
 

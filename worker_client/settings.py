@@ -1,5 +1,5 @@
 from typing import cast, Optional
-from decouple import config  # type: ignore[import-untyped]
+from decouple import config
 
 # redis upstream key where job payloads are read from
 UPSTREAM_KEY: str = cast(
@@ -26,8 +26,10 @@ REDIS_SSL_CERT_REQS: str = cast(
     str, config("REDIS_SSL_CERT_REQS", default="none", cast=str)
 )
 REDIS_SSL_CERT_PATH: Optional[str] = cast(
-    Optional[str], config("REDIS_SSL_CERT_PATH", default=None, cast=lambda x: x if x else None)  # type: ignore[misc]
+    Optional[str],
+    config("REDIS_SSL_CERT_PATH", default=None, cast=lambda x: x if x else None),
 )
 REDIS_SSL_KEY_PATH: Optional[str] = cast(
-    Optional[str], config("REDIS_SSL_KEY_PATH", default=None, cast=lambda x: x if x else None)  # type: ignore[misc]
+    Optional[str],
+    config("REDIS_SSL_KEY_PATH", default=None, cast=lambda x: x if x else None),
 )

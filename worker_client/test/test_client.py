@@ -162,7 +162,7 @@ class TestClient:
         assert "timestamp" in message_data
         assert "level" in message_data
         assert "message" in message_data
-        timestamp = datetime.datetime.fromisoformat(message_data["timestamp"])  # type: ignore[arg-type]
+        timestamp = datetime.datetime.fromisoformat(message_data["timestamp"])
         assert timestamp <= datetime.datetime.now()
         assert message_data["level"] == "INFO"
         assert message_data["message"] == "this is a test log message"
