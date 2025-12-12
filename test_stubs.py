@@ -1,5 +1,7 @@
 """Quick stub validation test - verifies stubs expose correct types."""
 
+from typing import Any
+
 from worker_client import (
     Consumer,
     Producer,
@@ -29,7 +31,7 @@ def test_stub_imports() -> None:
         print(msg)
     
     # These should all type-check
-    consumer: Consumer[str] = Consumer(decoder=my_decoder, handler=my_handler)
+    consumer: Consumer[str, Any] = Consumer(decoder=my_decoder, handler=my_handler)
     producer: Producer[str] = Producer(encoder=my_encoder)
     
     # Check that functions exist
