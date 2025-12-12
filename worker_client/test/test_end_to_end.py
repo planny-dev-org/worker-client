@@ -6,7 +6,7 @@ This test validates the complete flow: produce message → Redis → consume mes
 import json
 import threading
 from dataclasses import dataclass, asdict
-from typing import Optional
+from typing import Optional, Any
 
 from worker_client.client import Consumer, get_redis_client
 from worker_client.settings import UPSTREAM_KEY
@@ -83,7 +83,7 @@ class TestEndToEnd:
             received_messages[0] = message
 
         # Create consumer with typed decoder and handler
-        consumer: Consumer[TaskMessage] = Consumer(
+        consumer: Consumer[TaskMessage, Any] = Consumer(
             decoder=task_decoder, handler=test_handler
         )
 
@@ -163,7 +163,7 @@ class TestEndToEnd:
         def capture_handler(message: TaskMessage) -> None:
             received_messages[0] = message
 
-        consumer: Consumer[TaskMessage] = Consumer(
+        consumer: Consumer[TaskMessage, Any] = Consumer(
             decoder=task_decoder, handler=capture_handler
         )
 
@@ -226,7 +226,7 @@ class TestEndToEnd:
             processing_complete.set()
 
         # Create consumer
-        consumer: Consumer[TaskMessage] = Consumer(
+        consumer: Consumer[TaskMessage, Any] = Consumer(
             decoder=task_decoder, handler=handling_handler
         )
 

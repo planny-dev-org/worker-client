@@ -58,7 +58,8 @@ T_co = TypeVar("T_co", covariant=True)
 T_contra = TypeVar("T_contra", contravariant=True)
 # Generic type variable for Consumer, Producer and ConsumerJob
 T = TypeVar("T")
-T_out = TypeVar("T_out")  # Output type for Consumer.output()
+# Generic type variable for Consumer output messages
+T_out = TypeVar("T_out")
 
 
 class Decoder(Protocol[T_co]):
@@ -223,8 +224,8 @@ class Producer(Generic[T]):
 class Consumer(Generic[T, T_out]):
     """
     Class that handles interaction with redis as a consumer part of a consumer group.
-    Generic over T which is the type of decoded messages that the handler will receive.
-    Generic over T_out which is the type of messages sent via output().
+    Generic over T which is the type of decoded messages that the handler will receive,
+    and T_out which is the type of messages sent via output().
     """
 
     job: Optional[ConsumerJob] = None
@@ -270,7 +271,7 @@ class Consumer(Generic[T, T_out]):
         )
 
     @check_consumer_job
-    def output(self, message: Union[str, JsonDict]) -> None:
+    def output(self, message: T_out) -> None:
         self.redis_client.xadd(
             self.job.reply_output_stream_key,  # type: ignore[union-attr]
             Message(message=message, message_type="OUTPUT", level="INFO").to_json(),  # type: ignore[arg-type]

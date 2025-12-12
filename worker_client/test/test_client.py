@@ -16,12 +16,12 @@ from worker_client.test.conftest import flush_all_cache
 LOG = logging.getLogger(__name__)
 
 
-def run_new_job(results: list[Optional[Consumer[Any]]]) -> None:
+def run_new_job(results: list[Optional[Consumer[Any, Any]]]) -> None:
     """
     Intended for use in a thread
     Run consumer new_job since this call is blocking and can loop indefinitely if job data is wrong
     """
-    consumer: Consumer[Any] = Consumer()
+    consumer: Consumer[Any, Any] = Consumer()
     consumer.new_job()
     results[0] = consumer
 
@@ -95,7 +95,7 @@ class TestClient:
         redis_client = get_redis_client()
         redis_client.xadd(UPSTREAM_KEY, job_message_ok)  # type: ignore[arg-type]
 
-        results: list[Optional[Consumer[Any]]] = [None]
+        results: list[Optional[Consumer[Any, Any]]] = [None]
         thread = threading.Thread(target=run_new_job, args=(results,), daemon=True)
         thread.start()
         thread.join(timeout=10)
@@ -113,7 +113,7 @@ class TestClient:
         assert "received by worker_client_consumer" in message_data["message"]
 
         # assert consumer instance have a job attached now
-        consumer: Optional[Consumer[Any]] = results[0]
+        consumer: Optional[Consumer[Any, Any]] = results[0]
         assert consumer is not None
         assert consumer.job is not None
 
@@ -123,7 +123,7 @@ class TestClient:
         redis_client = get_redis_client()
         redis_client.xadd(UPSTREAM_KEY, job_message_ok)  # type: ignore[arg-type]
 
-        results: list[Optional[Consumer[Any]]] = [None]
+        results: list[Optional[Consumer[Any, Any]]] = [None]
         thread = threading.Thread(target=run_new_job, args=(results,), daemon=True)
         thread.start()
         thread.join(timeout=10)
@@ -141,7 +141,7 @@ class TestClient:
         assert "received by worker_client_consumer" in message_data["message"]
 
         # assert consumer instance have a job attached now
-        consumer: Optional[Consumer[Any]] = results[0]
+        consumer: Optional[Consumer[Any, Any]] = results[0]
         assert consumer is not None
         assert consumer.job is not None
 

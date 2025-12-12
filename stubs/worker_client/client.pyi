@@ -2,9 +2,9 @@ from typing import Generic, TypeVar, Optional, Callable, Protocol, Union, Mappin
 import redis
 
 T = TypeVar("T")
+T_out = TypeVar("T_out")
 T_co = TypeVar("T_co", covariant=True)
 T_contra = TypeVar("T_contra", contravariant=True)
-T_out = TypeVar("T_out")  # Output message type for Consumer.output()
 
 class Decoder(Protocol[T_co]):
     def __call__(self, raw: bytes) -> T_co: ...
@@ -31,17 +31,16 @@ class Message:
     ) -> None: ...
     def to_json(self) -> dict[str, Any]: ...
 
-class ConsumerJob(Generic[T]):
+class ConsumerJob:
     """
-    Job object that holds the message payload.
-    When no decoder is provided, payload is a JSON string.
-    When a decoder is provided, T represents the decoded type (though in practice payload remains a string).
+    Job object that holds the message payload as a JSON string.
     """
+
     message_id: str
     reply_log_stream_key: str
     reply_output_stream_key: Optional[str]
     remote_resource_id: Optional[str]
-    payload: Optional[str]  # Always a JSON string, regardless of T
+    payload: Optional[str]  # Always a JSON string
     def __init__(
         self,
         message_id: str,
@@ -75,8 +74,9 @@ class Consumer(Generic[T, T_out]):
     
     Type parameters:
         T: Input message type (what the worker receives/processes)
-        T_out: Output message type (what the worker sends back via output())
+        T_out: Output message type (what gets sent via output())
     """
+
     job: Optional[ConsumerJob]
     group_name: str
     consumer_name: str
