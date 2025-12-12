@@ -77,7 +77,7 @@ class Consumer(Generic[T, T_out]):
         T: Input message type (what the worker receives/processes)
         T_out: Output message type (what the worker sends back via output())
     """
-    job: Optional[ConsumerJob]
+    job: Optional[ConsumerJob[T]]
     group_name: str
     consumer_name: str
     redis_client: redis.Redis  # type: ignore[type-arg]
