@@ -3,7 +3,6 @@ import decorator
 import json
 from typing import Any, Callable
 
-import redis
 import pytest
 
 from worker_client.client import get_redis_client
