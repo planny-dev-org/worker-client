@@ -1,9 +1,10 @@
 from typing import Generic, TypeVar, Optional, Callable, Protocol, Union
 import redis
 
+T = TypeVar("T")
 T_co = TypeVar("T_co", covariant=True)
 T_contra = TypeVar("T_contra", contravariant=True)
-T = TypeVar("T")
+T_out = TypeVar("T_out")  # Output message type for Consumer.output()
 
 class Decoder(Protocol[T_co]):
     def __call__(self, raw: bytes) -> T_co: ...
@@ -63,7 +64,14 @@ class Producer(Generic[T]):
     ) -> str: ...
     def close(self) -> None: ...
 
-class Consumer(Generic[T]):
+class Consumer(Generic[T, T_out]):
+    """
+    Consumer class for processing jobs from Redis streams.
+    
+    Type parameters:
+        T: Input message type (what the worker receives/processes)
+        T_out: Output message type (what the worker sends back via output())
+    """
     job: Optional[ConsumerJob]
     group_name: str
     consumer_name: str
@@ -77,7 +85,7 @@ class Consumer(Generic[T]):
         handler: Optional[Callable[[T], None]] = None,
     ) -> None: ...
     def log(self, message: Union[str, JsonDict], level: LEVEL_LITERAL = "INFO") -> None: ...
-    def output(self, message: Union[str, JsonDict]) -> None: ...
+    def output(self, message: T_out) -> None: ...
     def acknowledge(self, message_id: Optional[str] = None) -> None: ...
     def health_check(self) -> None: ...
     def new_job(self) -> None: ...
