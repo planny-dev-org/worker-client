@@ -3,9 +3,9 @@ import decorator
 import json
 from typing import Any, Callable
 
-import redis
 import pytest
 
+from worker_client.client import get_redis_client
 from worker_client.constants import (
     LOG_STREAM_FIELD_NAME,
     OUTPUT_STREAM_FIELD_NAME,
@@ -16,7 +16,7 @@ from worker_client.constants import (
 
 def flush_all_cache(func: Callable[..., Any]) -> Callable[..., Any]:
     def wrapper(instance: Any, *args: Any, **kwargs: Any) -> Any:
-        redis_api = redis.Redis()
+        redis_api = get_redis_client()
         redis_api.flushall()  # type: ignore[dmisc]
         ret = func(*args, **kwargs)
         return ret
