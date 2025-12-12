@@ -1,4 +1,4 @@
-from typing import Generic, TypeVar, Optional, Callable, Protocol, Union
+from typing import Generic, TypeVar, Optional, Callable, Protocol, Union, Mapping, Any
 import redis
 
 T = TypeVar("T")
@@ -12,7 +12,7 @@ class Decoder(Protocol[T_co]):
 class Encoder(Protocol[T_contra]):
     def __call__(self, message: T_contra) -> str: ...
 
-JsonDict = dict[str, Union[str, int, float, bool, None]]
+JsonDict = Mapping[str, Any]
 LEVEL_LITERAL = str
 MSG_TYPE_LITERAL = str
 
@@ -29,14 +29,19 @@ class Message:
         message_type: MSG_TYPE_LITERAL,
         level: Optional[LEVEL_LITERAL] = "INFO",
     ) -> None: ...
-    def to_json(self) -> JsonDict: ...
+    def to_json(self) -> dict[str, Any]: ...
 
-class ConsumerJob:
+class ConsumerJob(Generic[T]):
+    """
+    Job object that holds the message payload.
+    When no decoder is provided, payload is a JSON string.
+    When a decoder is provided, T represents the decoded type (though in practice payload remains a string).
+    """
     message_id: str
     reply_log_stream_key: str
     reply_output_stream_key: Optional[str]
     remote_resource_id: Optional[str]
-    payload: Optional[str]
+    payload: Optional[str]  # Always a JSON string, regardless of T
     def __init__(
         self,
         message_id: str,
