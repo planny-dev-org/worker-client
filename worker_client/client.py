@@ -54,7 +54,9 @@ RedisStreamData = dict[str, object]
 
 # Generic type variable for message payload (covariant for Protocol)
 T_co = TypeVar("T_co", covariant=True)
-# Generic type variable for Consumer and ConsumerJob
+# Generic type variable for contravariant encoder
+T_contra = TypeVar("T_contra", contravariant=True)
+# Generic type variable for Consumer, Producer and ConsumerJob
 T = TypeVar("T")
 
 
@@ -62,6 +64,12 @@ class Decoder(Protocol[T_co]):
     """Protocol for decoder functions that transform raw bytes to typed messages."""
 
     def __call__(self, raw: bytes) -> T_co: ...
+
+
+class Encoder(Protocol[T_contra]):
+    """Protocol for encoder functions that transform typed messages to JSON strings."""
+
+    def __call__(self, message: T_contra) -> str: ...
 
 
 def get_redis_client() -> redis.Redis:
@@ -138,7 +146,77 @@ class ConsumerJob:
         self.payload = payload
 
 
-# Generic type variable for Consumer (reusing T from ConsumerJob)
+class Producer(Generic[T]):
+    """
+    Class that handles sending messages to Redis streams.
+    Generic over T which is the type of messages that the encoder will receive.
+    """
+
+    redis_client: redis.Redis  # type: ignore[type-arg]
+    encoder: Encoder[T]
+    stream_key: str
+
+    def __init__(
+        self,
+        encoder: Encoder[T],
+        stream_key: str = UPSTREAM_KEY,
+    ) -> None:
+        """
+        Initialize a Producer with an encoder function and target stream.
+
+        Args:
+            encoder: Function that encodes typed messages to JSON strings
+            stream_key: Redis stream key to send messages to (defaults to UPSTREAM_KEY)
+        """
+        self.redis_client = get_redis_client()
+        self.encoder = encoder
+        self.stream_key = stream_key
+
+    def send(
+        self,
+        message: T,
+        log_stream_key: str,
+        output_stream_key: str,
+        remote_resource_id: str,
+    ) -> str:
+        """
+        Send a typed message to the Redis stream.
+
+        Args:
+            message: The typed message to send
+            log_stream_key: Stream key for log messages
+            output_stream_key: Stream key for output messages
+            remote_resource_id: Identifier for the remote resource
+
+        Returns:
+            The message ID assigned by Redis
+        """
+        # Encode the typed message to a JSON string
+        payload_json = self.encoder(message)
+
+        # Validate it's valid JSON
+        try:
+            json.loads(payload_json)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Encoder must return valid JSON string: {e}")
+
+        # Send to Redis
+        message_id = self.redis_client.xadd(
+            self.stream_key,
+            {
+                PAYLOAD_FIELD_NAME: payload_json,
+                LOG_STREAM_FIELD_NAME: log_stream_key,
+                OUTPUT_STREAM_FIELD_NAME: output_stream_key,
+                REMOTE_RESOURCE_ID_FIELD_NAME: remote_resource_id,
+            },
+        )
+
+        LOG.info(f"Sent message {message_id} to stream {self.stream_key}")
+        return message_id
+
+    def close(self) -> None:
+        """Close the Redis connection."""
+        self.redis_client.close()
 
 
 class Consumer(Generic[T]):
