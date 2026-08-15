@@ -40,6 +40,7 @@ class ConsumerJob:
     reply_log_stream_key: str
     reply_output_stream_key: Optional[str]
     remote_resource_id: Optional[str]
+    remote_callback_url: Optional[str]
     payload: Optional[str]  # Always a JSON string
     def __init__(
         self,
@@ -47,6 +48,7 @@ class ConsumerJob:
         reply_log_stream_key: str,
         reply_output_stream_key: Optional[str] = None,
         remote_resource_id: Optional[str] = None,
+        remote_callback_url: Optional[str] = None,
         payload: Optional[str] = None,
     ) -> None: ...
 
@@ -65,13 +67,14 @@ class Producer(Generic[T]):
         log_stream_key: str,
         output_stream_key: str,
         remote_resource_id: str,
+        remote_callback_url: str,
     ) -> str: ...
     def close(self) -> None: ...
 
 class Consumer(Generic[T, T_out]):
     """
     Consumer class for processing jobs from Redis streams.
-    
+
     Type parameters:
         T: Input message type (what the worker receives/processes)
         T_out: Output message type (what gets sent via output())
@@ -89,7 +92,9 @@ class Consumer(Generic[T, T_out]):
         decoder: Optional[Decoder[T]] = None,
         handler: Optional[Callable[[T], None]] = None,
     ) -> None: ...
-    def log(self, message: Union[str, JsonDict], level: LEVEL_LITERAL = "INFO") -> None: ...
+    def log(
+        self, message: Union[str, JsonDict], level: LEVEL_LITERAL = "INFO"
+    ) -> None: ...
     def output(self, message: T_out) -> None: ...
     def acknowledge(self, message_id: Optional[str] = None) -> None: ...
     def health_check(self) -> None: ...

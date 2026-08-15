@@ -10,7 +10,6 @@ class AutoConfig:
         default: _T,
         cast: Callable[[Any], _T],
     ) -> _T: ...
-    
     @overload
     def __call__(
         self,
@@ -18,14 +17,12 @@ class AutoConfig:
         *,
         cast: Callable[[Any], _T],
     ) -> _T: ...
-    
     @overload
     def __call__(
         self,
         option: str,
         default: _T,
     ) -> _T: ...
-    
     @overload
     def __call__(
         self,
