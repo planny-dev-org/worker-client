@@ -519,8 +519,6 @@ class Consumer(Generic[T, T_out]):
                 )
                 LOG.error(message)
                 continue
-                LOG.error(message)
-                continue
 
             # job is properly set, exit the loop
             LOG.info("job is set, exiting loop")
