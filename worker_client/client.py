@@ -286,9 +286,11 @@ class Consumer(Generic[T, T_out]):
             self.job.reply_output_stream_key,  # type: ignore[union-attr]
             Message(message=message, message_type="OUTPUT", level="INFO").to_json(),  # type: ignore[arg-type]
         )
+        if self.job.remote_callback_url is not None:
+            self.callback()
 
     @check_consumer_job
-    def callback(self) -> requests.Response:
+    def callback(self) -> None:
         if self.job.remote_callback_url is None:
             raise ValueError("No remote_callback_url provided from upstream message")
 
@@ -296,7 +298,10 @@ class Consumer(Generic[T, T_out]):
             "Authorization": REMOTE_API_TOKEN,
         }
         response = requests.post(self.job.remote_callback_url, headers=headers)
-        return response
+        self.log(
+            f"POST {self.job.remote_callback_url} {response.status_code}, detail={response.text}",
+            level=logging.WARNING,
+        )
 
     def acknowledge(self, message_id: Optional[str] = None) -> None:
         """
