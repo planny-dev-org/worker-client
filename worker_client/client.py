@@ -3,6 +3,8 @@ import json
 import signal
 import time
 import types
+import requests
+
 from typing import (
     Optional,
     List,
@@ -25,6 +27,7 @@ from worker_client.constants import (
     OUTPUT_STREAM_FIELD_NAME,
     LOG_STREAM_FIELD_NAME,
     REMOTE_RESOURCE_ID_FIELD_NAME,
+    REMOTE_CALLBACK_URL_FIELD_NAME,
     PAYLOAD_FIELD_NAME,
 )
 from worker_client.settings import (
@@ -39,6 +42,7 @@ from worker_client.settings import (
     CONSUMER_VERSION_MAJOR,
     CONSUMER_VERSION_MINOR,
     CONSUMER_NAME_PREFIX,
+    REMOTE_API_TOKEN,
 )
 
 LOG = logging.getLogger(__name__)
@@ -131,6 +135,7 @@ class ConsumerJob:
     reply_log_stream_key: str
     reply_output_stream_key: Optional[str]
     remote_resource_id: Optional[str]
+    remote_callback_url: Optional[str]
     payload: Optional[str]  # Raw JSON string from Redis
 
     def __init__(
@@ -139,12 +144,14 @@ class ConsumerJob:
         reply_log_stream_key: str,
         reply_output_stream_key: Optional[str] = None,
         remote_resource_id: Optional[str] = None,
+        remote_callback_url: Optional[str] = None,
         payload: Optional[str] = None,
     ) -> None:
         self.message_id = message_id
         self.reply_log_stream_key = reply_log_stream_key
         self.reply_output_stream_key = reply_output_stream_key
         self.remote_resource_id = remote_resource_id
+        self.remote_callback_url = remote_callback_url
         self.payload = payload
 
 
@@ -180,6 +187,7 @@ class Producer(Generic[T]):
         log_stream_key: str,
         output_stream_key: str,
         remote_resource_id: str,
+        remote_callback_url: str,
     ) -> str:
         """
         Send a typed message to the Redis stream.
@@ -189,6 +197,7 @@ class Producer(Generic[T]):
             log_stream_key: Stream key for log messages
             output_stream_key: Stream key for output messages
             remote_resource_id: Identifier for the remote resource
+            remote_callback_url: Callback URL for the remote resource
 
         Returns:
             The message ID assigned by Redis
@@ -210,6 +219,7 @@ class Producer(Generic[T]):
                 LOG_STREAM_FIELD_NAME: log_stream_key,
                 OUTPUT_STREAM_FIELD_NAME: output_stream_key,
                 REMOTE_RESOURCE_ID_FIELD_NAME: remote_resource_id,
+                REMOTE_CALLBACK_URL_FIELD_NAME: remote_callback_url,
             },
         )
 
@@ -275,6 +285,22 @@ class Consumer(Generic[T, T_out]):
         self.redis_client.xadd(
             self.job.reply_output_stream_key,  # type: ignore[union-attr]
             Message(message=message, message_type="OUTPUT", level="INFO").to_json(),  # type: ignore[arg-type]
+        )
+        if self.job.remote_callback_url is not None:
+            self.callback()
+
+    @check_consumer_job
+    def callback(self) -> None:
+        if self.job.remote_callback_url is None:
+            raise ValueError("No remote_callback_url provided from upstream message")
+
+        headers = {
+            "Authorization": REMOTE_API_TOKEN,
+        }
+        response = requests.post(self.job.remote_callback_url, headers=headers)
+        self.log(
+            f"POST {self.job.remote_callback_url} {response.status_code}, detail={response.text}",
+            level=logging.WARNING,
         )
 
     def acknowledge(self, message_id: Optional[str] = None) -> None:
@@ -456,6 +482,11 @@ class Consumer(Generic[T, T_out]):
                 message_data[REMOTE_RESOURCE_ID_FIELD_NAME]
             )
 
+            remote_callback_url = message_data.get(REMOTE_CALLBACK_URL_FIELD_NAME)
+            self.job.remote_callback_url = (
+                str(remote_callback_url) if remote_callback_url is not None else None
+            )
+
             if PAYLOAD_FIELD_NAME not in message_data:
                 message = f"'{PAYLOAD_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
                 self.log(message=message, level="ERROR")
@@ -486,8 +517,6 @@ class Consumer(Generic[T, T_out]):
                     message=message,
                     level="ERROR",
                 )
-                LOG.error(message)
-                continue
                 LOG.error(message)
                 continue
 

@@ -33,3 +33,8 @@ REDIS_SSL_KEY_PATH: Optional[str] = cast(
     Optional[str],
     config("REDIS_SSL_KEY_PATH", default=None, cast=lambda x: x if x else None),
 )
+
+REMOTE_API_TOKEN: Optional[str] = cast(
+    Optional[str],
+    config("REMOTE_API_TOKEN", default=None, cast=lambda x: x if x else None),
+)
