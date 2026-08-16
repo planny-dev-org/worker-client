@@ -482,6 +482,11 @@ class Consumer(Generic[T, T_out]):
                 message_data[REMOTE_RESOURCE_ID_FIELD_NAME]
             )
 
+            remote_callback_url = message_data.get(REMOTE_CALLBACK_URL_FIELD_NAME)
+            self.job.remote_callback_url = (
+                str(remote_callback_url) if remote_callback_url is not None else None
+            )
+
             if PAYLOAD_FIELD_NAME not in message_data:
                 message = f"'{PAYLOAD_FIELD_NAME}' field is missing from message_id {message_id}, message is discarded"
                 self.log(message=message, level="ERROR")
