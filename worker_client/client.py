@@ -291,6 +291,9 @@ class Consumer(Generic[T, T_out]):
 
     @check_consumer_job
     def callback(self) -> None:
+        """
+        Call remote API callback URL to trigger result import
+        """
         if self.job.remote_callback_url is None:
             raise ValueError("No remote_callback_url provided from upstream message")
 
@@ -300,7 +303,7 @@ class Consumer(Generic[T, T_out]):
         response = requests.post(self.job.remote_callback_url, headers=headers)
         self.log(
             f"POST {self.job.remote_callback_url} {response.status_code}, detail={response.text}",
-            level=logging.WARNING,
+            level="WARNING",
         )
 
     def acknowledge(self, message_id: Optional[str] = None) -> None:
@@ -526,6 +529,9 @@ class Consumer(Generic[T, T_out]):
 
     def run(self) -> None:
         """
+        //// Deprecation warning: this method looks never used in solver runner,
+        //// do not assume it reflects solver execution logic
+
         Main worker loop that processes jobs using the provided decoder and handler.
         The decoder receives the raw JSON string as bytes and returns a typed message T.
         """
