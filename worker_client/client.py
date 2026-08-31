@@ -26,6 +26,7 @@ import redis
 from worker_client.constants import (
     OUTPUT_STREAM_FIELD_NAME,
     LOG_STREAM_FIELD_NAME,
+    EVENT_STREAM_FIELD_NAME,
     REMOTE_RESOURCE_ID_FIELD_NAME,
     REMOTE_CALLBACK_URL_FIELD_NAME,
     PAYLOAD_FIELD_NAME,
@@ -47,7 +48,7 @@ from worker_client.settings import (
 
 LOG = logging.getLogger(__name__)
 LEVEL_LITERAL = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
-MSG_TYPE_LITERAL = Literal["LOG", "OUTPUT"]
+MSG_TYPE_LITERAL = Literal["LOG", "OUTPUT", "EVENT"]
 
 # Type alias for JSON-compatible dict values (used for messages/logs sent to Redis)
 JsonDict = dict[str, Union[str, int, float, bool, None]]
@@ -133,6 +134,7 @@ class ConsumerJob:
 
     message_id: str
     reply_log_stream_key: str
+    reply_event_stream_key: Optional[str]
     reply_output_stream_key: Optional[str]
     remote_resource_id: Optional[str]
     remote_callback_url: Optional[str]
@@ -142,6 +144,7 @@ class ConsumerJob:
         self,
         message_id: str,
         reply_log_stream_key: str,
+        reply_event_stream_key: Optional[str] = None,
         reply_output_stream_key: Optional[str] = None,
         remote_resource_id: Optional[str] = None,
         remote_callback_url: Optional[str] = None,
@@ -149,10 +152,22 @@ class ConsumerJob:
     ) -> None:
         self.message_id = message_id
         self.reply_log_stream_key = reply_log_stream_key
+        # None means the upstream message supplied no event stream; event() then falls
+        # back to the log stream rather than dropping the event.
+        self.reply_event_stream_key = reply_event_stream_key
         self.reply_output_stream_key = reply_output_stream_key
         self.remote_resource_id = remote_resource_id
         self.remote_callback_url = remote_callback_url
         self.payload = payload
+
+    @property
+    def event_stream_key(self) -> str:
+        """Where structured events go, falling back to the log stream.
+
+        Keeping the fallback here rather than at each call site means a caller can
+        always emit an event, whatever the upstream message happened to carry.
+        """
+        return self.reply_event_stream_key or self.reply_log_stream_key
 
 
 class Producer(Generic[T]):
@@ -278,6 +293,25 @@ class Consumer(Generic[T, T_out]):
         self.redis_client.xadd(
             self.job.reply_log_stream_key,  # type: ignore[union-attr]
             Message(message=message, message_type="LOG", level=level).to_json(),  # type: ignore[arg-type]
+        )
+
+    @check_consumer_job
+    def event(
+        self, message: Union[str, JsonDict], level: LEVEL_LITERAL = "INFO"
+    ) -> None:
+        """Emit one structured event on the job's event stream.
+
+        Separate from log() because the two have different readers. Logs are read by
+        people; events are consumed by the backend to drive state -- started, progress,
+        failed, and solver telemetry. Split streams let the backend retain them
+        differently and read either without filtering the other.
+
+        Falls back to the log stream when the upstream message carried no
+        event_stream_key, so this is safe to call against any backend version.
+        """
+        self.redis_client.xadd(
+            self.job.event_stream_key,  # type: ignore[union-attr]
+            Message(message=message, message_type="EVENT", level=level).to_json(),  # type: ignore[arg-type]
         )
 
     @check_consumer_job
@@ -445,9 +479,16 @@ class Consumer(Generic[T, T_out]):
                 break
 
             # instantiate ConsumerJob with minimal setup to dialog with server (message_id and log stream key)
+            # The event stream is optional and read here rather than in the required-field
+            # checks below: a message without it is valid, and event() falls back to the
+            # log stream, so an older backend keeps working unchanged.
+            event_stream_key = message_data.get(EVENT_STREAM_FIELD_NAME)
             self.job = ConsumerJob(
                 message_id=message_id,
                 reply_log_stream_key=str(message_data[LOG_STREAM_FIELD_NAME]),
+                reply_event_stream_key=(
+                    str(event_stream_key) if event_stream_key is not None else None
+                ),
             )
 
             # send a smoke log message

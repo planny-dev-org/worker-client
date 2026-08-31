@@ -158,6 +158,32 @@ while True:
 ```
 
 
+# Log stream vs event stream
+
+A job carries two reply streams for telemetry, because they have different readers:
+
+| method | stream | read by | carries |
+|---|---|---|---|
+| `consumer.log(...)` | `log_stream_key` | people | human-readable lines |
+| `consumer.event(...)` | `event_stream_key` | the backend | structured state: started, progress, failed, solver telemetry |
+
+`event_stream_key` is **optional** in the upstream message. When it is absent,
+`consumer.event()` falls back to the log stream, so a backend that does not send one
+keeps working and no event is dropped. The fallback lives on `ConsumerJob.event_stream_key`,
+so no call site has to check.
+
+Both take `str` or a dict; a dict is JSON-encoded, since Redis stream fields are flat.
+Serialised entries are distinguishable by their `type` field: `LOG`, `EVENT` or `OUTPUT`.
+
+```python
+consumer.log(message="pre-processing done")
+consumer.event(message={"kind": "progress", "pct": 45})
+consumer.event(message={"kind": "failed", "error": "infeasible"}, level="ERROR")
+```
+
+Unlike `output()`, `event()` never triggers the `remote_callback_url` POST -- it is
+telemetry, not a result, so it is safe to call as often as needed.
+
 # Env var setup
 
 Here are default env vars setup. It can be defined in a `.ini` file that decouple can find and customized to your needs

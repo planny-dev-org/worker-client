@@ -7,6 +7,7 @@ import pytest
 
 from worker_client.client import get_redis_client
 from worker_client.constants import (
+    EVENT_STREAM_FIELD_NAME,
     LOG_STREAM_FIELD_NAME,
     OUTPUT_STREAM_FIELD_NAME,
     PAYLOAD_FIELD_NAME,
@@ -86,5 +87,17 @@ def job_message_missing_output_key() -> dict[str, str]:
     return {
         LOG_STREAM_FIELD_NAME: "worker:logs:12345",
         PAYLOAD_FIELD_NAME: json.dumps({"task": "process_data", "data_id": 42}),
+        REMOTE_RESOURCE_ID_FIELD_NAME: "resource_67890",
+    }
+
+
+@pytest.fixture
+def job_message_with_event_stream() -> dict[str, str]:
+    """A job message that supplies a dedicated event stream."""
+    return {
+        LOG_STREAM_FIELD_NAME: "worker:logs:12345",
+        EVENT_STREAM_FIELD_NAME: "worker:events:12345",
+        OUTPUT_STREAM_FIELD_NAME: "worker:output:12345",
+        PAYLOAD_FIELD_NAME: json.dumps("process_data"),
         REMOTE_RESOURCE_ID_FIELD_NAME: "resource_67890",
     }
